@@ -7,6 +7,9 @@ and that's the point. She asks questions, listens to your answers, and remembers
 what she learns. Every conversation, she knows you a little better, greets you by
 name, and brings up things you've told her before.
 
+She's a southeast-Texas gal with a Navy past — the occasional "damn" included —
+and these days she's your right hand at Hood's Pool Service, and she talks like it.
+
 Aqua is now a **real desktop application** — a downloadable Windows executable
 built with Electron (JavaScript, **no Python**), powered by an **OpenAI brain**.
 Her memory is a private file on your PC; nothing goes to the cloud except your
@@ -18,9 +21,9 @@ own direct calls to OpenAI.
 
 - 🖥️ **A real desktop app** — installs like any Windows program, with her own
   window and icon.
-- 🧠 **An OpenAI brain with a real personality** — warm, playful, quick-witted,
-  and genuinely curious about you. She teases gently, remembers everything, and
-  talks like a friend, not a form letter.
+- 🧠 **An OpenAI brain with a real personality** — a southeast-Texas gal with a
+  Navy past who now keeps Hood's Pool Service running smooth. Warm, quick-witted,
+  occasionally salty, and genuinely curious about you.
 - 🗣️ **A genuinely human voice** — she speaks with OpenAI's neural text-to-speech
   (`tts-1-hd`): pick from 10 lifelike voices and preview them in the Voices panel.
   Falls back to Windows' voice when offline.
