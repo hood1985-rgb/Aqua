@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Aqua's memory & personal data — never commit this
+data/
+*.mp3
+*.wav
+
+# OS
+.DS_Store
+Thumbs.db

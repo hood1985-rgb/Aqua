@@ -1,0 +1,11 @@
+# Aqua's Python dependencies — setup.bat installs these for you.
+# If you ever need to install manually:  pip install -r requirements.txt
+
+edge-tts>=6.1          # natural, human-sounding neural voices (uses the internet)
+pyttsx3>=2.90          # offline fallback voice (uses the voices built into Windows)
+SpeechRecognition>=3.10  # turns your speech into text (uses Google's free web service)
+sounddevice>=0.4.6     # microphone capture
+soundfile>=0.12.1      # plays the generated voice audio
+numpy>=1.24            # used by the audio libraries
+requests>=2.28         # networking
+colorama>=0.4.6        # pretty terminal colors on Windows
