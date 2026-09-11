@@ -18,11 +18,14 @@ own direct calls to OpenAI.
 
 - 🖥️ **A real desktop app** — installs like any Windows program, with her own
   window and icon.
-- 🧠 **An OpenAI brain** — deep, free-form conversation using your own OpenAI
-  API key (default model `gpt-4o-mini`, changeable in Settings).
+- 🧠 **An OpenAI brain with a real personality** — warm, playful, quick-witted,
+  and genuinely curious about you. She teases gently, remembers everything, and
+  talks like a friend, not a form letter.
+- 🗣️ **A genuinely human voice** — she speaks with OpenAI's neural text-to-speech
+  (`tts-1-hd`): pick from 10 lifelike voices and preview them in the Voices panel.
+  Falls back to Windows' voice when offline.
 - 💬 **Open conversation** — chat by typing, or tap the mic and just talk.
-- 🗣️ **Voice in & out** — she speaks with Windows' natural voices, and hears
-  you with **OpenAI Whisper**.
+- 🎤 **Voice in** — she hears you with **OpenAI Whisper**.
 - 📝 **Real memory** — everything you tell her is saved privately on *your* PC.
   She still learns your name, facts, and tastes the same way she always has.
 - 🔒 **Private by design** — no account, no telemetry. Your API key is stored
@@ -68,8 +71,9 @@ To just run her during development: `npm start`.
 
 Your key is stored locally in the app's private data folder
 (`%APPDATA%\Aqua\keys.json`) and is sent only to OpenAI. You can also set an
-`OPENAI_API_KEY` environment variable instead. The microphone uses the same key
-(Whisper) — without a key she can still type-chat using her built-in local brain.
+`OPENAI_API_KEY` environment variable instead. The same key powers her **voice**
+(OpenAI TTS) and her **ears** (Whisper) — without a key she can still type-chat
+using her built-in local brain, speaking with Windows' built-in voice.
 
 ---
 
@@ -89,7 +93,7 @@ Your key is stored locally in the app's private data folder
 | `/help` | Show all commands |
 | `/profile` | See everything she's learned about you |
 | `/voice on` / `/voice off` | Turn her voice on or off |
-| `/voices` then `/voice Aria` | Browse and switch voices |
+| `/voices` then `/voice nova` | Browse and switch voices (neural or Windows) |
 | `/rate +10%` or `/rate -10%` | Speak faster or slower |
 | `/handsfree` | Toggle always-listening mode |
 | `/name Robert` | Tell her your name directly |
@@ -121,7 +125,7 @@ brain still drives greetings and memory extraction — she always grows on her o
 | SmartScreen blocks the app | Click **More info → Run anyway** (it's unsigned) |
 | She can't hear you | Allow the microphone when Windows asks; check Settings → Privacy → Microphone |
 | Mic says "add your key" | Whisper needs your OpenAI key — add it in ⚙️ Settings |
-| She doesn't speak | Tap 🔊 to check her voice is on, and check your volume |
+| She doesn't speak | Tap 🔊 to check her voice is on, and check your volume. The neural voice needs your OpenAI key; without it she uses the Windows voice. |
 | OpenAI errors | Check your key, your plan/credit, and your internet connection |
 | Want a truly fresh start | `/reset` inside Aqua |
 

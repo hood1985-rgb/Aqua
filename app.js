@@ -30,12 +30,29 @@ let brain = new Brain(mem);
 const smart = { on: false, model: "gpt-4o-mini" };
 
 /* ---------------- her voice (speaking) ---------------- */
+const OPENAI_VOICES = [
+  ["nova", "Nova — bright & cheerful"],
+  ["shimmer", "Shimmer — airy & gentle"],
+  ["coral", "Coral — warm & friendly"],
+  ["sage", "Sage — calm & wise"],
+  ["fable", "Fable — soft & youthful"],
+  ["alloy", "Alloy — balanced & neutral"],
+  ["echo", "Echo — warm & steady"],
+  ["ash", "Ash — deep & mature"],
+  ["onyx", "Onyx — deep & confident"],
+  ["ballad", "Ballad — expressive & melodic"],
+];
+
 const Speaker = {
   available: ("speechSynthesis" in window),
   enabled: true,
-  voice: null,
+  voice: null,        // Windows fallback voice (SpeechSynthesisVoice)
   rate: 1.0,
   voices: [],
+  _queue: [],
+  _speaking: false,
+  _gen: 0,
+  _audio: null,
 
   loadVoices() {
     if (!this.available) return [];
@@ -51,24 +68,110 @@ const Speaker = {
   },
 
   say(text) {
-    if (!this.enabled || !this.available) return;
+    if (!this.enabled) return;
     const spoken = this.clean(text);
     if (!spoken) return;
-    try {
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(spoken);
-      if (this.voice) u.voice = this.voice;
-      u.rate = clamp(this.rate, 0.5, 2);
-      u.pitch = 1.0;
-      u.volume = 1.0;
-      window.speechSynthesis.speak(u);
-    } catch (e) { /* never crash the chat over voice */ }
+    this._queue.push(spoken);
+    this._drain();
+  },
+
+  async _drain() {
+    if (this._speaking) return;
+    this._speaking = true;
+    while (this._queue.length) {
+      const text = this._queue.shift();
+      await this._speakOne(text);
+    }
+    this._speaking = false;
+  },
+
+  async _speakOne(text) {
+    const gen = ++this._gen;
+    if (voiceEngine() === "openai" && bridge) {
+      try {
+        const { audio, mime } = await bridge.speak({
+          text,
+          voice: mem.data.openai_voice || "nova",
+          speed: clamp(this.rate, 0.25, 4),
+        });
+        if (gen !== this._gen) return;
+        await playAudioFromBase64(audio, mime || "audio/mpeg");
+        return;
+      } catch (e) {
+        // fall through to the Windows voice
+      }
+    }
+    if (gen !== this._gen) return;
+    await synthSpeak(text);
   },
 
   stop() {
+    this._gen++;
+    this._queue.length = 0;
+    if (this._audio) { try { this._audio.pause(); } catch (e) {} this._audio = null; }
     if (this.available) try { window.speechSynthesis.cancel(); } catch (e) {}
   },
 };
+
+function voiceEngine() {
+  // OpenAI neural voices when a key is present, unless the user picked Windows.
+  if (!smart.on) return "windows";
+  return mem.data.voice_engine === "windows" ? "windows" : "openai";
+}
+
+function synthSpeak(text) {
+  return new Promise((resolve) => {
+    if (!Speaker.available) { resolve(); return; }
+    try {
+      const u = new SpeechSynthesisUtterance(text);
+      if (Speaker.voice) u.voice = Speaker.voice;
+      u.rate = clamp(Speaker.rate, 0.5, 2);
+      u.pitch = 1.0;
+      u.volume = 1.0;
+      u.onend = () => resolve();
+      u.onerror = () => resolve();
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(u);
+    } catch (e) {
+      resolve();
+    }
+  });
+}
+
+function playAudioFromBase64(b64, mime) {
+  return new Promise((resolve, reject) => {
+    try {
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const blob = new Blob([bytes], { type: mime || "audio/mpeg" });
+      const url = URL.createObjectURL(blob);
+      const a = new Audio(url);
+      Speaker._audio = a;
+      a.onended = () => { URL.revokeObjectURL(url); Speaker._audio = null; resolve(); };
+      a.onerror = () => { URL.revokeObjectURL(url); Speaker._audio = null; reject(new Error("audio play failed")); };
+      a.play().catch((e) => { URL.revokeObjectURL(url); Speaker._audio = null; reject(e); });
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+async function previewOpenAIVoice(vid) {
+  if (!bridge || !smart.on) { toast("Add your OpenAI key first to preview voices."); return; }
+  toast(`Previewing ${vid}…`);
+  try {
+    const { audio, mime } = await bridge.speak({
+      text: "Hi, I'm Aqua. This is what I sound like.",
+      voice: vid,
+      speed: clamp(Speaker.rate, 0.25, 4),
+    });
+    await playAudioFromBase64(audio, mime || "audio/mpeg");
+  } catch (e) {
+    console.error(e);
+    toast("Couldn't preview — check your key and internet.");
+  }
+}
 
 function pickPreferredVoice(voices) {
   if (!voices || !voices.length) return null;
@@ -204,6 +307,7 @@ function send() {
 async function handleUserText(text) {
   text = (text || "").trim();
   if (!text) return;
+  Speaker.stop();           // stop talking the moment the user starts typing
   addMessage("user", text);
   input.value = "";
   autosize();
@@ -334,18 +438,28 @@ function handleCommand(line) {
         out.voice_on = on;
         if (on) Speaker.say("Voice is back on. Missed me?");
       } else if (rest) {
-        const voices = Speaker.loadVoices();
         const q = rest.toLowerCase();
-        const v = voices.find((x) =>
-          (x.name || "").toLowerCase().includes(q) || (x.lang || "").toLowerCase().includes(q));
-        if (v) {
-          Speaker.voice = v;
-          mem.data.voice_id = v.voiceURI || v.name;
+        const oa = OPENAI_VOICES.find(([id]) => id.toLowerCase() === q || id.toLowerCase().includes(q));
+        if (oa) {
+          mem.data.openai_voice = oa[0];
+          mem.data.voice_engine = "openai";
           mem.save();
-          out.reply = `Switched to ${v.name}.`;
+          out.reply = `Switched to ${oa[0]} — my OpenAI neural voice.`;
           Speaker.say("This is my new voice. What do you think?");
         } else {
-          out.reply = `I couldn't find a voice matching "${rest}" — open the Voices panel to browse.`;
+          const voices = Speaker.loadVoices();
+          const v = voices.find((x) =>
+            (x.name || "").toLowerCase().includes(q) || (x.lang || "").toLowerCase().includes(q));
+          if (v) {
+            Speaker.voice = v;
+            mem.data.voice_id = v.voiceURI || v.name;
+            mem.data.voice_engine = "windows";
+            mem.save();
+            out.reply = `Switched to ${v.name}.`;
+            Speaker.say("This is my new voice. What do you think?");
+          } else {
+            out.reply = `I couldn't find a voice matching "${rest}" — open the Voices panel to browse.`;
+          }
         }
       } else {
         out.reply = `Voice is ${Speaker.enabled ? "on" : "off"}. Usage: /voice on|off  or  /voice <name>`;
@@ -706,14 +820,23 @@ function applyRate(pct) {
 
 function renderVoices() {
   panelTitle.textContent = "Her voice";
-  if (!Speaker.available) {
-    panelBody.innerHTML = `<div class="hint">Voice isn't supported here.</div>`;
-    return;
-  }
-  const voices = Speaker.loadVoices();
-  const currentURI = Speaker.voice ? (Speaker.voice.voiceURI || Speaker.voice.name) : null;
+
+  const engine = voiceEngine();             // "openai" | "windows"
+  const oaVoice = mem.data.openai_voice || "nova";
 
   let html = `
+    <div class="panel-section">
+      <h3>Voice engine</h3>
+      <div class="seg">
+        <button id="engine-openai" class="seg-btn ${engine === "openai" ? "on" : ""}">OpenAI neural</button>
+        <button id="engine-windows" class="seg-btn ${engine === "windows" ? "on" : ""}">Windows voice</button>
+      </div>
+      <p class="hint" style="margin-top:10px;">
+        ${smart.on
+          ? "OpenAI neural voices are her most human-sounding. Windows voices still work offline."
+          : "Add your OpenAI key (⚙️ Settings) to unlock her most human voices. Windows voices work without it."}
+      </p>
+    </div>
     <div class="panel-section">
       <h3>Speaking rate</h3>
       <div class="rate-ctl">
@@ -721,22 +844,53 @@ function renderVoices() {
         <div class="rate-val" id="rate-val">${rateText(mem.data.rate || 1.0)}</div>
         <button id="rate-up">+</button>
       </div>
-    </div>
-    <div class="panel-section">
-      <h3>Pick a voice (${voices.length})</h3>`;
+    </div>`;
 
-  for (const v of voices) {
-    const uri = v.voiceURI || v.name;
-    const cur = uri === currentURI;
-    html += `
-      <button class="voice-row ${cur ? "current" : ""}" data-uri="${escapeHtml(uri)}">
-        <div><div>${escapeHtml(v.name || "Unnamed voice")}</div><div class="vlabel">${escapeHtml(v.lang || "")}${v.default ? " · default" : ""}</div></div>
-        ${cur ? '<span class="check">✓</span>' : ""}
-      </button>`;
+  if (engine === "openai") {
+    html += `<div class="panel-section"><h3>Pick a neural voice</h3>`;
+    for (const [id, label] of OPENAI_VOICES) {
+      const cur = id === oaVoice;
+      html += `
+        <div class="voice-row ${cur ? "current" : ""}" data-vid="${escapeHtml(id)}">
+          <div><div>${escapeHtml(label.split("—")[0].trim())}</div><div class="vlabel">${escapeHtml(label.split("—")[1].trim())}</div></div>
+          <span class="vrow-actions">
+            <button class="mini-btn preview-btn" data-vid="${escapeHtml(id)}" title="Preview">▶</button>
+            ${cur ? '<span class="check">✓</span>' : ""}
+          </span>
+        </div>`;
+    }
+    html += `<p class="hint" style="margin-top:10px;">Tap ▶ to hear each one. Her voice is generated by OpenAI on the fly — your words never leave your PC except to render the audio.</p></div>`;
+  } else {
+    if (!Speaker.available) {
+      html += `<div class="hint">Voice isn't supported here.</div>`;
+    } else {
+      const voices = Speaker.loadVoices();
+      const currentURI = Speaker.voice ? (Speaker.voice.voiceURI || Speaker.voice.name) : null;
+      html += `<div class="panel-section"><h3>Pick a Windows voice (${voices.length})</h3>`;
+      for (const v of voices) {
+        const uri = v.voiceURI || v.name;
+        const cur = uri === currentURI;
+        html += `
+          <button class="voice-row ${cur ? "current" : ""}" data-uri="${escapeHtml(uri)}">
+            <div><div>${escapeHtml(v.name || "Unnamed voice")}</div><div class="vlabel">${escapeHtml(v.lang || "")}${v.default ? " · default" : ""}</div></div>
+            ${cur ? '<span class="check">✓</span>' : ""}
+          </button>`;
+      }
+      html += `</div>`;
+    }
   }
-  html += `<p class="hint" style="margin-top:10px;">These are the voices built into Windows (Microsoft's natural voices).</p></div>`;
 
   panelBody.innerHTML = html;
+
+  const setEngine = (e) => {
+    mem.data.voice_engine = e;
+    mem.save();
+    renderVoices();
+  };
+  const bo = $("engine-openai");
+  const bw = $("engine-windows");
+  if (bo) bo.addEventListener("click", () => setEngine("openai"));
+  if (bw) bw.addEventListener("click", () => setEngine("windows"));
 
   $("rate-down").addEventListener("click", () => {
     const rate = applyRate(-10);
@@ -747,16 +901,28 @@ function renderVoices() {
     $("rate-val").textContent = rateText(rate);
   });
 
-  panelBody.querySelectorAll(".voice-row").forEach((row) => {
+  panelBody.querySelectorAll(".voice-row[data-vid]").forEach((row) => {
+    row.addEventListener("click", (ev) => {
+      if (ev.target.classList.contains("preview-btn")) { previewOpenAIVoice(row.dataset.vid); return; }
+      mem.data.openai_voice = row.dataset.vid;
+      mem.data.voice_engine = "openai";
+      mem.save();
+      renderVoices();
+      Speaker.say("This is my new voice. What do you think?");
+    });
+  });
+
+  panelBody.querySelectorAll(".voice-row[data-uri]").forEach((row) => {
     row.addEventListener("click", () => {
       const uri = row.dataset.uri;
-      const v = voices.find((x) => (x.voiceURI || x.name) === uri);
+      const v = Speaker.loadVoices().find((x) => (x.voiceURI || x.name) === uri);
       if (!v) return;
       Speaker.voice = v;
       mem.data.voice_id = v.voiceURI || v.name;
+      mem.data.voice_engine = "windows";
       mem.save();
-      Speaker.say("This is my new voice. What do you think?");
       renderVoices();
+      Speaker.say("This is my new voice. What do you think?");
     });
   });
 }
@@ -825,7 +991,7 @@ async function renderSettings() {
     </div>
     <div class="panel-section">
       <h3>Voice &amp; ears</h3>
-      <p class="hint">• <b>Speaking:</b> she uses Windows' natural voices.<br>
+      <p class="hint">• <b>Speaking:</b> she talks with an OpenAI neural voice (pick one in 🎙️ Voices) — much more human than the default system voice. Falls back to Windows offline.<br>
       • <b>Listening:</b> the 🎤 mic uses OpenAI Whisper with your key.</p>
     </div>`;
 
@@ -906,6 +1072,7 @@ async function boot() {
   setupVoices();
   Speaker.enabled = mem.data.voice_on !== false;
   setVoiceUI(Speaker.enabled);
+  if (!mem.data.openai_voice) mem.data.openai_voice = "nova";
 
   await refreshSmart();
 

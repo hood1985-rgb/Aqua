@@ -55,7 +55,7 @@ function maskKey(key) {
 
 /* ---------------- tiny HTTPS JSON client ---------------- */
 
-function httpsRequest(url, { method = "GET", headers = {}, body = null, timeout = 120000 } = {}) {
+function httpsRequest(url, { method = "GET", headers = {}, body = null, timeout = 120000, binary = false } = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
     const payload =
@@ -71,24 +71,26 @@ function httpsRequest(url, { method = "GET", headers = {}, body = null, timeout 
         },
       },
       (res) => {
-        let data = "";
-        res.on("data", (c) => (data += c));
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
         res.on("end", () => {
-          let parsed = null;
-          try {
-            parsed = JSON.parse(data || "{}");
-          } catch (e) {
-            parsed = null;
-          }
+          const buf = Buffer.concat(chunks);
           if (res.statusCode >= 200 && res.statusCode < 300) {
-            resolve(parsed !== null ? parsed : data);
-          } else {
-            const msg =
-              parsed && parsed.error && parsed.error.message
-                ? parsed.error.message
-                : `HTTP ${res.statusCode}: ${String(data).slice(0, 200)}`;
-            reject(new Error(msg));
+            if (binary) return resolve(buf);
+            const text = buf.toString("utf8");
+            try {
+              return resolve(JSON.parse(text));
+            } catch (e) {
+              return resolve(text);
+            }
           }
+          const text = buf.toString("utf8");
+          let msg = `HTTP ${res.statusCode}: ${text.slice(0, 200)}`;
+          try {
+            const j = JSON.parse(text);
+            if (j && j.error && j.error.message) msg = j.error.message;
+          } catch (e) { /* not JSON */ }
+          reject(new Error(msg));
         });
       }
     );
@@ -150,6 +152,26 @@ async function transcribeWithWhisper(audio, mimeType, key) {
   return String(res.text || "").trim();
 }
 
+async function synthesizeSpeech(text, voice, speed, key) {
+  /* OpenAI's neural text-to-speech — far more human than the system voices. */
+  return httpsRequest("https://api.openai.com/v1/audio/speech", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: {
+      model: "tts-1-hd",
+      voice: voice || "nova",
+      input: text,
+      response_format: "mp3",
+      speed: Number(speed) || 1,
+    },
+    timeout: 60000,
+    binary: true,
+  });
+}
+
 /* ---------------- IPC handlers (renderer <-> main) ---------------- */
 
 function registerIpc() {
@@ -188,6 +210,13 @@ function registerIpc() {
     const buf = Buffer.from(audio);   // audio is an ArrayBuffer from the renderer
     const text = await transcribeWithWhisper(buf, mimeType, cfg.openai_api_key);
     return { text };
+  });
+
+  ipcMain.handle("speak", async (event, { text, voice, speed }) => {
+    const cfg = loadConfig();
+    if (!cfg.openai_api_key) throw new Error("no-key");
+    const buf = await synthesizeSpeech(text, voice, speed, cfg.openai_api_key);
+    return { audio: buf.toString("base64"), mime: "audio/mpeg" };
   });
 
   ipcMain.handle("open-external", (event, url) => {

@@ -464,3 +464,32 @@ html, body {
 
 .settings-note a, .hint a { color: var(--aqua); text-decoration: none; }
 .settings-note a:hover, .hint a:hover { text-decoration: underline; }
+
+/* ---------- voice engine toggle & preview ---------- */
+.seg { display: flex; gap: 8px; }
+.seg-btn {
+  flex: 1;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ink-dim);
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 13.5px;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.seg-btn:hover { background: rgba(255, 255, 255, 0.1); }
+.seg-btn.on { background: var(--aqua-soft); color: var(--aqua); border-color: var(--aqua); }
+
+.vrow-actions { display: flex; align-items: center; gap: 8px; }
+.mini-btn {
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 12px;
+}
+.mini-btn:hover { background: var(--aqua-soft); color: var(--aqua); }

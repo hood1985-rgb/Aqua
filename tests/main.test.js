@@ -64,6 +64,14 @@ async function main() {
     console.log("[ok] chat without key correctly refused:", e.message);
   }
 
+  // speak (OpenAI TTS) without a key must also throw
+  try {
+    await handlers["speak"]({}, { text: "hi", voice: "nova", speed: 1 });
+    throw new Error("speak should have thrown without a key");
+  } catch (e) {
+    console.log("[ok] speak without key correctly refused:", e.message);
+  }
+
   // 3) save a key, then read it back
   const saved = await handlers["config:save"]({}, { openai_api_key: "sk-test-1234567890", model: "gpt-4o" });
   if (!saved.hasKey) throw new Error("key did not save");
