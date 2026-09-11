@@ -1,60 +1,85 @@
 # 🌊 Aqua
 
-**Your personal assistant and cyber-buddy, living on your Windows PC.**
+**Your personal assistant and cyber-buddy, living on your PC.**
 
 Aqua is a voice-enabled chat companion who starts out knowing nothing about you —
 and that's the point. She asks questions, listens to your answers, and remembers
 what she learns. Every conversation, she knows you a little better, greets you by
-name, and brings up things you've told her before. She talks out loud in a natural
-human voice, and she listens when you speak.
+name, and brings up things you've told her before.
+
+Aqua is now a **real desktop application** — a downloadable Windows executable
+built with Electron (JavaScript, **no Python**), powered by an **OpenAI brain**.
+Her memory is a private file on your PC; nothing goes to the cloud except your
+own direct calls to OpenAI.
 
 ---
 
 ## What she does
 
-- 💬 **Open conversation** — chat by typing, or press Enter and just talk. She
-  speaks her replies out loud.
-- 🧠 **Progressive learning** — she asks friendly questions across a dozen
-  topics (your world, your work, your tastes, your dreams) and paces herself so
-  it never feels like an interrogation.
-- 📝 **Real memory** — everything you tell her is saved to a private file on
-  *your* PC. Close her, come back next week — she'll pick up right where you
-  left off, and open with something she remembers about you.
-- 🗣️ **Human-sounding voice** — powered by Microsoft's neural voices (the same
-  ones you hear in modern assistants). If your internet drops, she falls back
-  to the built-in Windows voice so she's never silent.
-- ❤️ **A little heart** — she notices when you're tired or down and responds
-  like a friend would, not a form letter.
-- 🔒 **Private by design** — no account, no cloud, no telemetry. Her memory is
-  a plain JSON file you can read, edit, or wipe anytime.
+- 🖥️ **A real desktop app** — installs like any Windows program, with her own
+  window and icon.
+- 🧠 **An OpenAI brain** — deep, free-form conversation using your own OpenAI
+  API key (default model `gpt-4o-mini`, changeable in Settings).
+- 💬 **Open conversation** — chat by typing, or tap the mic and just talk.
+- 🗣️ **Voice in & out** — she speaks with Windows' natural voices, and hears
+  you with **OpenAI Whisper**.
+- 📝 **Real memory** — everything you tell her is saved privately on *your* PC.
+  She still learns your name, facts, and tastes the same way she always has.
+- 🔒 **Private by design** — no account, no telemetry. Your API key is stored
+  only on your machine and used only to talk to OpenAI directly.
 
-## Getting started (Windows)
+---
 
-**Step 1 — Install Python** (one time)
+## Getting the app
 
-Get Python 3.10+ from [python.org/downloads](https://www.python.org/downloads/).
-On the first installer screen, **check the box that says "Add python.exe to PATH"**
-before clicking Install.
+### Option A — download a ready-made .exe (easiest)
 
-**Step 2 — Set Aqua up** (one time)
+Go to the **Releases** page of this repository and download **`Aqua-Setup-1.0.0.exe`**
+(the installer) or **`Aqua-Portable-1.0.0.exe`** (no install — just run it).
 
-Double-click **`setup.bat`**. A black window opens and installs everything she
-needs into a private `.venv` folder. Takes a few minutes.
+- **Installer:** double-click, choose where to install, and it adds Aqua to your
+  Start menu and desktop.
+- **Portable:** a single `.exe` you can put anywhere and double-click.
 
-**Step 3 — Talk to her**
+> Windows may show *"Windows protected your PC"* because the app isn't code-signed.
+> Click **More info → Run anyway**.
 
-Double-click **`Run Aqua.bat`** any time you want to chat.
+### Option B — build it yourself (needs Node.js)
 
-> Prefer the terminal? `python aqua.py` works too, and `python tests/smoke_test.py`
-> runs a quick self-test of her brain.
+1. Install Node.js from [nodejs.org](https://nodejs.org) (the LTS version).
+2. In the Aqua folder, open a terminal and run:
+   ```
+   npm install
+   npm run dist
+   ```
+3. The installer and portable `.exe` land in the `dist/` folder.
+
+To just run her during development: `npm start`.
+
+---
+
+## Connecting her OpenAI brain
+
+1. Open Aqua and click **⚙️ Settings** (or type `/settings`).
+2. Paste your OpenAI API key (get one at
+   [platform.openai.com/api-keys](https://platform.openai.com/api-keys)).
+3. Optionally change the model (e.g. `gpt-4o-mini`, `gpt-4o`, `gpt-4.1-mini`).
+4. Her top bar now shows **"OpenAI brain · gpt-4o-mini"**.
+
+Your key is stored locally in the app's private data folder
+(`%APPDATA%\Aqua\keys.json`) and is sent only to OpenAI. You can also set an
+`OPENAI_API_KEY` environment variable instead. The microphone uses the same key
+(Whisper) — without a key she can still type-chat using her built-in local brain.
+
+---
 
 ## How to talk with her
 
 | You do | What happens |
 |---|---|
 | Just type | She reads and answers — silently or out loud |
-| Press **Enter** on an empty line | The mic opens — speak naturally, pause, and she replies |
-| Type `/handsfree` | Always-listening mode: no keyboard needed at all |
+| Tap **🎤** | The mic opens — speak, pause, and she replies (Whisper) |
+| Tap **🎧** | Always-listening mode: no keyboard needed at all |
 | Say "goodbye" | She says goodbye and saves everything |
 
 ## Commands
@@ -64,19 +89,19 @@ Double-click **`Run Aqua.bat`** any time you want to chat.
 | `/help` | Show all commands |
 | `/profile` | See everything she's learned about you |
 | `/voice on` / `/voice off` | Turn her voice on or off |
-| `/voices` then `/voice en-US-GuyNeural` | Browse and switch voices (US/UK/AU/IE, male & female) |
+| `/voices` then `/voice Aria` | Browse and switch voices |
 | `/rate +10%` or `/rate -10%` | Speak faster or slower |
 | `/handsfree` | Toggle always-listening mode |
 | `/name Robert` | Tell her your name directly |
 | `/forget fishing` | Delete any memories matching a word |
-| `/brain` | See which brain she's using, and how to upgrade it |
+| `/brain` | See which brain she's using |
+| `/settings` | Connect her OpenAI brain |
 | `/reset` | Wipe her memory completely (she'll ask first) |
 | `/quit` | Say goodbye and exit |
 
 ## How she learns
 
-Her memory lives in `data/profile.json` — open it sometime, it's just text.
-She stores:
+Her long-term memory lives in the app's private storage on your PC. She stores:
 
 - your **name** and how long you two have known each other,
 - **facts** she picks out of your sentences ("I love fishing", "I'm a teacher",
@@ -86,53 +111,41 @@ She stores:
 
 On each startup she greets you by name, sometimes opens with something she
 remembers ("Last time you told me you love fishing — how's that going?"), and
-continues learning where she left off. Ask her *"what do you know about me?"*
-anytime to hear it all back.
-
-## Optional: give her a smarter brain
-
-Her built-in brain works offline with zero setup and is what does the learning.
-If you ever want deeper free-form conversation, she can think with a large
-language model instead — she'll still learn and remember the same way:
-
-- **Ollama (free, private, runs on your PC)** — install from
-  [ollama.com](https://ollama.com), run `ollama pull llama3.2`, and restart
-  Aqua. She finds it automatically.
-- **OpenAI (internet, your API key)** — create `data/keys.json` containing
-  `{"openai_api_key": "sk-..."}` and restart Aqua.
-
-Type `/brain` to see which one she's currently using.
+continues learning where she left off. Even with the OpenAI brain, her local
+brain still drives greetings and memory extraction — she always grows on her own.
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---|---|
-| `setup.bat` says Python wasn't found | Reinstall Python and check **"Add python.exe to PATH"** on the first screen |
-| She can't hear you | Windows Settings → Privacy & security → Microphone → make sure "Let desktop apps access your microphone" is **On** |
-| She sounds robotic | Her neural voice needs internet; check your connection (she falls back to the built-in Windows voice offline) |
-| Speech-to-text seems dead | Same thing — her ears use a free online speech service. Typing always works. |
-| Want a truly fresh start | `/reset` inside Aqua, or just delete the `data` folder |
+| SmartScreen blocks the app | Click **More info → Run anyway** (it's unsigned) |
+| She can't hear you | Allow the microphone when Windows asks; check Settings → Privacy → Microphone |
+| Mic says "add your key" | Whisper needs your OpenAI key — add it in ⚙️ Settings |
+| She doesn't speak | Tap 🔊 to check her voice is on, and check your volume |
+| OpenAI errors | Check your key, your plan/credit, and your internet connection |
+| Want a truly fresh start | `/reset` inside Aqua |
 
 ## Project layout
 
 ```
-aqua.py          entry point — run this
-brain.py         her personality, questions, and listening skills
-memory.py        long-term memory (data/profile.json)
-voice.py         speaking (neural + Windows fallback) and listening
-llm.py           optional Ollama/OpenAI smart brain
-setup.bat        one-time Windows installer
-Run Aqua.bat     double-click to chat
-tests/           self-test for her brain
-data/            her memory — created at runtime, never committed
+main.js            Electron main process — window, key storage, OpenAI calls
+preload.js         secure bridge between the UI and the main process
+index.html         the app window's UI
+app.js             chat UI, voice, commands, settings
+brain.js           her brain & memory (pure JavaScript, localStorage)
+style.css          the look
+package.json       app metadata + build config (electron-builder)
+icons/             app icons (including Windows .ico)
+.github/workflows/ GitHub Action that builds the Windows installer
+tests/smoke.js     self-test for her brain (run: node tests/smoke.js)
 ```
 
 ## Roadmap ideas
 
+- Code-sign the installer so SmartScreen stays quiet
 - Wake word ("Hey Aqua") for hands-free start
 - Reminders and timers ("remind me at 3pm")
 - Letting her run small PC tasks (open apps, check the weather)
-- A memory browser window
 - More question packs and personality tuning
 
 ---

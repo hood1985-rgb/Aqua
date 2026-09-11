@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; connect-src 'none';">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aqua — your cyber-buddy</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="bubbles" aria-hidden="true">
+    <span></span><span></span><span></span><span></span><span></span><span></span>
+  </div>
+
+  <div id="app">
+    <header id="topbar">
+      <div class="brand">
+        <div class="avatar" aria-hidden="true">🌊</div>
+        <div class="brand-text">
+          <div class="brand-name">Aqua</div>
+          <div class="brand-sub" id="brain-status">waking up…</div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button class="icon-btn" id="btn-voice" title="Turn her voice on/off">🔊</button>
+        <button class="icon-btn" id="btn-profile" title="What she knows about you">🧠</button>
+        <button class="icon-btn" id="btn-voices" title="Browse &amp; switch voices">🎙️</button>
+        <button class="icon-btn" id="btn-settings" title="Settings &amp; OpenAI brain">⚙️</button>
+        <button class="icon-btn" id="btn-help" title="Help &amp; commands">❓</button>
+        <button class="icon-btn danger" id="btn-reset" title="Wipe her memory">🗑️</button>
+        <button class="icon-btn danger" id="btn-quit" title="Quit">⏻</button>
+      </div>
+    </header>
+
+    <main id="chat">
+      <div id="chat-scroll" aria-live="polite"></div>
+    </main>
+
+    <footer id="composer">
+      <button class="icon-btn" id="btn-handsfree" title="Hands-free listening">🎧</button>
+      <button class="icon-btn" id="btn-mic" title="Talk with your voice">🎤</button>
+      <textarea id="input" rows="1" placeholder="Message Aqua…  (Enter to send, Shift+Enter for a new line)"></textarea>
+      <button id="btn-send">Send&nbsp;<span>➤</span></button>
+    </footer>
+  </div>
+
+  <div id="overlay" class="hidden"></div>
+
+  <aside id="panel" class="hidden">
+    <div class="panel-head">
+      <h2 id="panel-title">Panel</h2>
+      <button class="icon-btn" id="panel-close" title="Close">✕</button>
+    </div>
+    <div id="panel-body"></div>
+  </aside>
+
+  <div id="modal" class="hidden">
+    <div class="modal-card">
+      <h3>Start over?</h3>
+      <p>This wipes <em>everything</em> Aqua knows about you — your name, every memory, every question she's asked. There's no undo.</p>
+      <div class="modal-actions">
+        <button id="modal-cancel" class="ghost">Cancel</button>
+        <button id="modal-confirm" class="danger">Reset everything</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="hidden"></div>
+
+  <noscript>
+    <p style="color:#9fc3de;font-family:sans-serif;padding:20px;">Aqua needs JavaScript — please enable it in your browser.</p>
+  </noscript>
+
+  <script src="brain.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

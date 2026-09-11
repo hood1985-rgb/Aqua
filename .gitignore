@@ -1,14 +1,19 @@
-# Python
-__pycache__/
-*.pyc
-.venv/
-venv/
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
 
-# Aqua's memory & personal data — never commit this
-data/
-*.mp3
-*.wav
+# Build output
+dist/
+release/
+out/
+*.blockmap
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# Editors
+.vscode/
+.idea/

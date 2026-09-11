@@ -1,0 +1,55 @@
+{
+  "name": "aqua",
+  "productName": "Aqua",
+  "version": "1.0.0",
+  "description": "Aqua — your personal assistant and cyber-buddy with an OpenAI brain. Runs on your PC as a desktop app.",
+  "main": "main.js",
+  "author": "Aqua",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win",
+    "dist:dir": "electron-builder --dir --win"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.aqua.cyberbuddy",
+    "productName": "Aqua",
+    "copyright": "Aqua — your cyber-buddy",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "app.js",
+      "brain.js",
+      "style.css",
+      "favicon.svg",
+      "icons/**/*"
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "icons/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Aqua",
+      "artifactName": "Aqua-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Aqua-Portable-${version}.${ext}"
+    }
+  }
+}
