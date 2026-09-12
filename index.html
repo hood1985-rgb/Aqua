@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; connect-src 'none';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; connect-src https://api.open-meteo.com https://geocoding-api.open-meteo.com;">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Aqua — your cyber-buddy</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -16,7 +16,10 @@
   <div id="app">
     <header id="topbar">
       <div class="brand">
-        <div class="avatar" aria-hidden="true">🌊</div>
+        <div class="avatar-wrap" id="avatar-wrap">
+          <img id="top-avatar" src="icons/avatar.png" alt="Aqua" data-face="idle">
+          <span class="talk-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        </div>
         <div class="brand-text">
           <div class="brand-name">Aqua</div>
           <div class="brand-sub" id="brain-status">waking up…</div>
@@ -27,6 +30,7 @@
         <button class="icon-btn" id="btn-profile" title="What she knows about you">🧠</button>
         <button class="icon-btn" id="btn-voices" title="Browse &amp; switch voices">🎙️</button>
         <button class="icon-btn" id="btn-pool" title="Pool service &amp; chemistry">🧰</button>
+        <button class="icon-btn" id="btn-journal" title="Daily journal">📓</button>
         <button class="icon-btn" id="btn-settings" title="Settings &amp; OpenAI brain">⚙️</button>
         <button class="icon-btn" id="btn-help" title="Help &amp; commands">❓</button>
         <button class="icon-btn danger" id="btn-reset" title="Wipe her memory">🗑️</button>
@@ -76,6 +80,8 @@
   <script src="brain.js"></script>
   <script src="pool.js"></script>
   <script src="tools.js"></script>
+  <script src="journal.js"></script>
+  <script src="weather.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

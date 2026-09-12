@@ -73,11 +73,14 @@ const Speaker = {
   enabled: true,
   voice: null,        // Windows fallback voice (SpeechSynthesisVoice)
   rate: 1.0,
+  volume: 1.2,        // a little louder by default
   voices: [],
   _queue: [],
   _speaking: false,
   _gen: 0,
   _audio: null,
+  _source: null,
+  _ctx: null,
 
   loadVoices() {
     if (!this.available) return [];
@@ -103,11 +106,13 @@ const Speaker = {
   async _drain() {
     if (this._speaking) return;
     this._speaking = true;
+    setFaceState("talking");
     while (this._queue.length) {
       const text = this._queue.shift();
       await this._speakOne(text);
     }
     this._speaking = false;
+    setFaceState("idle");
   },
 
   async _speakOne(text) {
@@ -118,6 +123,7 @@ const Speaker = {
           text,
           voice: mem.data.openai_voice || "nova",
           speed: clamp(this.rate, 0.25, 4),
+          model: mem.data.tts_model || "tts-1",
         });
         if (gen !== this._gen) return;
         await playAudioFromBase64(audio, mime || "audio/mpeg");
@@ -133,8 +139,10 @@ const Speaker = {
   stop() {
     this._gen++;
     this._queue.length = 0;
+    if (this._source) { try { this._source.stop(); } catch (e) {} this._source = null; }
     if (this._audio) { try { this._audio.pause(); } catch (e) {} this._audio = null; }
     if (this.available) try { window.speechSynthesis.cancel(); } catch (e) {}
+    setFaceState("idle");
   },
 };
 
@@ -152,7 +160,7 @@ function synthSpeak(text) {
       if (Speaker.voice) u.voice = Speaker.voice;
       u.rate = clamp(Speaker.rate, 0.5, 2);
       u.pitch = 1.0;
-      u.volume = 1.0;
+      u.volume = clamp(Speaker.volume, 0, 2);
       u.onend = () => resolve();
       u.onerror = () => resolve();
       window.speechSynthesis.cancel();
@@ -163,15 +171,58 @@ function synthSpeak(text) {
   });
 }
 
+function base64ToBytes(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+function getAudioContext() {
+  if (!Speaker._ctx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    Speaker._ctx = new AC();
+  }
+  if (Speaker._ctx.state === "suspended") Speaker._ctx.resume();
+  return Speaker._ctx;
+}
+
 function playAudioFromBase64(b64, mime) {
   return new Promise((resolve, reject) => {
+    const finish = (err) => {
+      Speaker._source = null;
+      if (err) reject(err); else resolve();
+    };
     try {
-      const bin = atob(b64);
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      const blob = new Blob([bytes], { type: mime || "audio/mpeg" });
+      const ctx = getAudioContext();
+      const bytes = base64ToBytes(b64);
+      ctx.decodeAudioData(bytes.buffer, (audioBuf) => {
+        const src = ctx.createBufferSource();
+        src.buffer = audioBuf;
+        const gain = ctx.createGain();
+        gain.gain.value = clamp(Speaker.volume, 0, 2);   // boost makes her louder
+        src.connect(gain);
+        gain.connect(ctx.destination);
+        Speaker._source = src;
+        src.onended = () => finish(null);
+        src.start();
+      }, (err) => {
+        // fall back to a plain <audio> element if decoding fails
+        fallbackAudioPlay(b64, mime).then(finish).catch(finish);
+      });
+    } catch (e) {
+      fallbackAudioPlay(b64, mime).then(finish).catch(finish);
+    }
+  });
+}
+
+function fallbackAudioPlay(b64, mime) {
+  return new Promise((resolve, reject) => {
+    try {
+      const blob = new Blob([base64ToBytes(b64)], { type: mime || "audio/mpeg" });
       const url = URL.createObjectURL(blob);
       const a = new Audio(url);
+      a.volume = clamp(Speaker.volume, 0, 2);
       Speaker._audio = a;
       a.onended = () => { URL.revokeObjectURL(url); Speaker._audio = null; resolve(); };
       a.onerror = () => { URL.revokeObjectURL(url); Speaker._audio = null; reject(new Error("audio play failed")); };
@@ -229,6 +280,7 @@ function setupVoices() {
     window.speechSynthesis.onvoiceschanged = apply;
   }
   Speaker.rate = clamp(Number(mem.data.rate) || 1.0, 0.5, 2);
+  Speaker.volume = clamp(Number(mem.data.volume) || 1.2, 0, 2);
 }
 
 /* ---------------- state ---------------- */
@@ -248,12 +300,26 @@ const btnVoice = $("btn-voice");
 const brainStatus = $("brain-status");
 
 /* ---------------- rendering ---------------- */
+function setFaceState(state) {
+  const img = $("top-avatar");
+  const wrap = $("avatar-wrap");
+  if (img) img.dataset.face = state;
+  if (wrap) wrap.classList.toggle("talking", state === "talking");
+}
+
 function addMessage(who, text) {
   const row = document.createElement("div");
   row.className = "msg " + who;
   const avatar = document.createElement("div");
   avatar.className = "bubble-avatar";
-  avatar.textContent = who === "aqua" ? "🌊" : "🙂";
+  if (who === "aqua") {
+    const img = document.createElement("img");
+    img.src = "icons/avatar.png";
+    img.alt = "Aqua";
+    avatar.appendChild(img);
+  } else {
+    avatar.textContent = "🙂";
+  }
   const bubble = document.createElement("div");
   bubble.className = "bubble";
   bubble.textContent = text;
@@ -278,7 +344,10 @@ function showTyping() {
   row.id = "typing-row";
   const avatar = document.createElement("div");
   avatar.className = "bubble-avatar";
-  avatar.textContent = "🌊";
+  const img = document.createElement("img");
+  img.src = "icons/avatar.png";
+  img.alt = "Aqua";
+  avatar.appendChild(img);
   const bubble = document.createElement("div");
   bubble.className = "bubble";
   bubble.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
@@ -342,6 +411,7 @@ async function handleUserText(text) {
   busy = true;
   setSendDisabled(true);
   showTyping();
+  setFaceState("thinking");
 
   let reply = "";
   let action = null;
@@ -366,10 +436,9 @@ async function handleUserText(text) {
       brain.learnFrom(text);  // she still learns, even with an OpenAI brain
       try {
         hideTyping();
-        reply = await streamSmartReply(text);
+        reply = await streamSmartReply(text);   // speaks sentence-by-sentence
         mem.addExchange(text, reply);
         mem.save();
-        Speaker.say(reply);
       } catch (e) {
         if (String(e && e.message).includes("no-key")) {
           smart.on = false;
@@ -397,12 +466,16 @@ async function handleUserText(text) {
     addMessage("aqua", reply);
   }
 
+  if (reply) logDayExchange(text, reply);
+
   if (action) handleAction(action);
   busy = false;
   setSendDisabled(false);
+  if (!Speaker._speaking) setFaceState("idle");
 }
 
-/* Stream her OpenAI reply word-by-word into a live bubble. */
+/* Stream her OpenAI reply word-by-word into a live bubble, and start
+   speaking each sentence as soon as it's complete — she responds sooner. */
 function streamSmartReply(text) {
   return new Promise((resolve, reject) => {
     const messages = [{ role: "system", content: brain.systemPrompt() }]
@@ -411,12 +484,28 @@ function streamSmartReply(text) {
 
     const bubble = addMessage("aqua", "");
     let acc = "";
+    let sentenceBuf = "";
+    let spoke = false;
     let off = null;
+
+    const flush = (finalize) => {
+      // split off complete sentences (ending in . ! ? …), keep the tail buffered
+      const parts = sentenceBuf.split(/(?<=[.!?…])\s+/);
+      const complete = finalize ? parts : parts.slice(0, -1);
+      sentenceBuf = finalize ? "" : (parts[parts.length - 1] || "");
+      for (const s of complete) {
+        const t = s.trim();
+        if (t) { Speaker.say(t); spoke = true; }
+      }
+    };
+
     if (bridge.onChatChunk) {
       off = bridge.onChatChunk((delta) => {
         acc += delta;
         bubble.textContent = acc;
         scrollToBottom();
+        sentenceBuf += delta;
+        flush(false);
       });
     }
 
@@ -426,6 +515,9 @@ function streamSmartReply(text) {
         const final = (res && res.reply) ? res.reply : acc;
         bubble.textContent = final || "Hmm, my brain came back empty. Try me again?";
         scrollToBottom();
+        sentenceBuf = final || "";
+        flush(true);
+        if (!spoke && final) Speaker.say(final);
         resolve(final || "");
       })
       .catch((err) => {
@@ -443,6 +535,7 @@ function handleAction(action) {
     case "show_help": openPanel("help"); break;
     case "show_settings": openPanel("settings"); break;
     case "show_pool": openPanel("pool"); break;
+    case "show_journal": openPanel("journal"); break;
     case "toggle_handsfree": setHandsfree(!handsfreeOn); break;
     case "toggle_wake": setWake(!wakeOn); break;
     case "do_backup": exportMemory(); break;
@@ -470,11 +563,15 @@ const HELP_TEXT = `Commands you can type anytime:
   /pool set <gal>  e.g.  /pool set 15000
   /chem ph 8.2 7.5 chemistry math for a test
   /job add <text>  log a service job, /jobs to list, /job done <n>
+  /customer add <t>  log a customer, /customers, /customer del <n>
+  /weather set <city>  weather-aware pool tips for the day
   /remind in 20 min to check pH    set a reminder
   /timer 5         a quick timer (minutes)
   /reminders       list what's coming up
+  /journal         her daily journal of your time together
   /brain           which brain she's thinking with
   /settings        connect her OpenAI brain (API key)
+  /backup          export her memory to a file
   /reset           wipe everything she knows (asks first)
   /quit            say goodbye and close
 
@@ -649,6 +746,20 @@ function handleCommand(line) {
       break;
     }
 
+    case "/weather": {
+      if (rest.toLowerCase().startsWith("set")) {
+        const loc = rest.replace(/^set\s*/i, "").trim();
+        if (!loc) { out.reply = "Usage: /weather set Dallas"; break; }
+        mem.data.location = loc;
+        mem.save();
+        out.reply = `Location set to ${loc}. Fetching the forecast…`;
+      } else {
+        out.reply = mem.data.location ? `Checking the weather for ${mem.data.location}…` : "Tell me where first — /weather set Dallas";
+      }
+      out.action = "show_pool";
+      break;
+    }
+
     case "/job": {
       mem.data.tasks = mem.data.tasks || [];
       if (rest.toLowerCase().startsWith("add")) {
@@ -680,6 +791,33 @@ function handleCommand(line) {
       if (!open.length) { out.reply = "No open jobs, boss. Nice and quiet for once."; break; }
       const list = open.map((t, i) => `${i + 1}. ${t.text}`).join("\n");
       out.reply = `Open jobs (${open.length}):\n${list}`;
+      out.action = "show_pool";
+      break;
+    }
+
+    case "/customer": {
+      mem.data.customers = mem.data.customers || [];
+      if (rest.toLowerCase().startsWith("add")) {
+        const text = rest.replace(/^add\s*/i, "").trim();
+        if (!text) { out.reply = "Usage: /customer add Smith - 15k gal - sand filter"; break; }
+        mem.data.customers.unshift({ id: "c" + Date.now() + Math.random().toString(36).slice(2, 5), text, date: new Date().toISOString() });
+        mem.save();
+        out.reply = `Customer added: ${text}.`;
+      } else if (rest.toLowerCase().startsWith("del") || rest.toLowerCase().startsWith("remove")) {
+        const n = parseInt(rest.replace(/^(del|remove)\s*/i, "").replace(/[^\d]/g, ""), 10);
+        const c = mem.data.customers[n - 1];
+        if (c) { mem.data.customers.splice(n - 1, 1); mem.save(); out.reply = `Removed: ${c.text}.`; }
+        else { out.reply = "No such customer — /customers to list."; }
+      } else {
+        out.reply = "Usage: /customer add <name & details>, /customers, /customer del <n>";
+      }
+      break;
+    }
+
+    case "/customers": {
+      const list = mem.data.customers || [];
+      if (!list.length) { out.reply = "No customers on file yet — /customer add to log one."; break; }
+      out.reply = `Customers (${list.length}):\n` + list.map((c, i) => `${i + 1}. ${c.text}`).join("\n");
       out.action = "show_pool";
       break;
     }
@@ -725,6 +863,16 @@ function handleCommand(line) {
     case "/restore":
       out.reply = "Pick a memory backup to load.";
       out.action = "do_restore";
+      break;
+
+    case "/journal":
+      out.reply = "Here's our journal.";
+      out.action = "show_journal";
+      break;
+
+    case "/update":
+      if (bridge && bridge.installUpdate) { bridge.installUpdate(); out.reply = "Installing the update…"; }
+      else { out.reply = "No update waiting."; }
       break;
 
     case "/settings":
@@ -1083,6 +1231,105 @@ function restoreMemory() {
   fileInput.click();
 }
 
+/* ---------------- daily journal ---------------- */
+function logDayExchange(u, a) {
+  const today = Journal.todayKey();
+  if (!mem.data.daily || mem.data.daily.date !== today) {
+    mem.data.daily = { date: today, lines: [] };
+  }
+  mem.data.daily.lines.push({ u, a });
+  if (mem.data.daily.lines.length > 500) mem.data.daily.lines = mem.data.daily.lines.slice(-500);
+}
+
+async function journalizeDay(date, lines) {
+  const dayFacts = mem.allFacts().filter((f) => String(f.date || "").slice(0, 10) === date);
+  if (smart.on && bridge) {
+    try {
+      const prompt = Journal.buildJournalPrompt({ date, transcript: lines, name: mem.name });
+      const res = await bridge.chat({
+        messages: [{ role: "system", content: "You are Aqua." }, { role: "user", content: prompt }],
+        model: smart.model,
+      });
+      const text = (res && res.reply || "").trim();
+      if (text) return { date, text };
+    } catch (e) { /* fall through to the local summary */ }
+  }
+  return { date, text: Journal.summarizeLocal({ lines, facts: dayFacts, name: mem.name }) };
+}
+
+async function maybeJournalize() {
+  const d = mem.data.daily;
+  const today = Journal.todayKey();
+  if (d && d.date && d.date !== today && d.lines && d.lines.length) {
+    const entry = await journalizeDay(d.date, d.lines);
+    if (entry && entry.text) {
+      mem.data.journal = mem.data.journal || [];
+      mem.data.journal = mem.data.journal.filter((e) => e.date !== d.date);
+      mem.data.journal.unshift(entry);
+    }
+  }
+  mem.data.daily = { date: today, lines: [] };
+  mem.save();
+}
+
+function renderJournal() {
+  panelTitle.textContent = "Our journal";
+  const entries = mem.data.journal || [];
+  let html = `<div class="panel-section"><h3>Daily journal</h3>`;
+  if (!entries.length) {
+    html += `<div class="hint">No entries yet — at the end of each day I'll jot down what we talked about. Or summarize right now.</div>`;
+  }
+  for (const e of entries) {
+    html += `<div class="journal-entry"><div class="journal-date">${escapeHtml(e.date)}</div><div class="journal-text">${escapeHtml(e.text)}</div></div>`;
+  }
+  html += `</div>
+    <div class="panel-section">
+      <button id="journal-now" class="btn-solid">Summarize today now</button>
+      <p class="hint" style="margin-top:10px;">Entries live on your PC with the rest of her memory.</p>
+    </div>`;
+  panelBody.innerHTML = html;
+  const b = $("journal-now");
+  if (b) b.addEventListener("click", async () => {
+    const today = Journal.todayKey();
+    const lines = (mem.data.daily && mem.data.daily.lines) || [];
+    if (!lines.length) { toast("Nothing to summarize yet — talk to me first!"); return; }
+    toast("Writing today's entry…");
+    const entry = await journalizeDay(today, lines);
+    if (entry && entry.text) {
+      mem.data.journal = mem.data.journal || [];
+      mem.data.journal = mem.data.journal.filter((e) => e.date !== today);
+      mem.data.journal.unshift(entry);
+      mem.save();
+      renderJournal();
+    }
+  });
+}
+
+/* ---------------- weather (Open-Meteo, free, no key) ---------------- */
+async function loadWeather(city, outEl) {
+  outEl.textContent = "Checking the forecast…";
+  try {
+    const gres = await fetch(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`
+    );
+    const gj = await gres.json();
+    if (!gj.results || !gj.results.length) { outEl.textContent = "Couldn't find that place — try a nearby city."; return; }
+    const { latitude, longitude, name } = gj.results[0];
+    const fres = await fetch(
+      `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}` +
+      `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode,windspeed_10m_max,uv_index_max` +
+      `&temperature_unit=fahrenheit&timezone=auto&forecast_days=1`
+    );
+    const fj = await fres.json();
+    const desc = Weather.describe(fj.daily);
+    const tips = Weather.buildTips(fj.daily);
+    outEl.innerHTML = `<b>${escapeHtml(name)}:</b> ${escapeHtml(desc)}<br>` +
+      tips.map((t) => `• ${escapeHtml(t)}`).join("<br>");
+  } catch (e) {
+    outEl.textContent = "Couldn't reach the weather service — check your internet.";
+  }
+}
+
 /* ---------------- panels ---------------- */
 const overlay = $("overlay");
 const panel = $("panel");
@@ -1095,6 +1342,7 @@ function openPanel(which) {
   else if (which === "help") renderHelp();
   else if (which === "settings") renderSettings();
   else if (which === "pool") renderPool();
+  else if (which === "journal") renderJournal();
   else return;
   panel.classList.remove("hidden");
   panel.classList.add("open");
@@ -1114,6 +1362,7 @@ $("btn-voices").addEventListener("click", () => openPanel("voices"));
 $("btn-help").addEventListener("click", () => openPanel("help"));
 $("btn-settings").addEventListener("click", () => openPanel("settings"));
 $("btn-pool").addEventListener("click", () => openPanel("pool"));
+$("btn-journal").addEventListener("click", () => openPanel("journal"));
 
 const KIND_LABEL = {
   favorite: "Favorites", like: "Likes", dislike: "Dislikes", work: "Work",
@@ -1219,6 +1468,21 @@ function renderVoices() {
         <div class="rate-val" id="rate-val">${rateText(mem.data.rate || 1.0)}</div>
         <button id="rate-up">+</button>
       </div>
+    </div>
+    <div class="panel-section">
+      <h3>Volume</h3>
+      <div class="vol-ctl">
+        <input type="range" id="vol-slider" min="0" max="200" value="${Math.round((mem.data.volume || 1.2) * 100)}">
+        <div class="vol-val" id="vol-val">${Math.round((mem.data.volume || 1.2) * 100)}%</div>
+      </div>
+    </div>
+    <div class="panel-section">
+      <h3>Voice quality</h3>
+      <div class="seg">
+        <button id="q-fast" class="seg-btn ${(mem.data.tts_model || "tts-1") === "tts-1" ? "on" : ""}">Fast (tts-1)</button>
+        <button id="q-hd" class="seg-btn ${mem.data.tts_model === "tts-1-hd" ? "on" : ""}">HD (tts-1-hd)</button>
+      </div>
+      <p class="hint" style="margin-top:10px;">Fast responds sooner. HD sounds a touch richer but takes a beat longer.</p>
     </div>`;
 
   if (engine === "openai") {
@@ -1276,6 +1540,22 @@ function renderVoices() {
     $("rate-val").textContent = rateText(rate);
   });
 
+  const volSlider = $("vol-slider");
+  const volVal = $("vol-val");
+  const applyVol = () => {
+    const v = parseInt(volSlider.value, 10) / 100;
+    mem.data.volume = v;
+    mem.save();
+    Speaker.volume = v;
+    volVal.textContent = Math.round(v * 100) + "%";
+  };
+  volSlider.addEventListener("input", applyVol);
+
+  const qFast = $("q-fast");
+  const qHd = $("q-hd");
+  if (qFast) qFast.addEventListener("click", () => { mem.data.tts_model = "tts-1"; mem.save(); renderVoices(); });
+  if (qHd) qHd.addEventListener("click", () => { mem.data.tts_model = "tts-1-hd"; mem.save(); renderVoices(); });
+
   panelBody.querySelectorAll(".voice-row[data-vid]").forEach((row) => {
     row.addEventListener("click", (ev) => {
       if (ev.target.classList.contains("preview-btn")) { previewOpenAIVoice(row.dataset.vid); return; }
@@ -1318,11 +1598,15 @@ function renderHelp() {
     ["/pool set 15000", "your pool size"],
     ["/chem ph 8.2 7.5", "pool chemistry math"],
     ["/job add …", "log a service job (/jobs, /job done 1)"],
+    ["/customer add …", "log a customer (/customers)"],
+    ["/weather set Dallas", "weather-aware pool tips"],
     ["/remind in 20 min …", "set a reminder"],
     ["/timer 5", "a quick timer"],
+    ["/journal", "her daily journal"],
     ["/brain", "which brain she's using"],
     ["/settings", "connect her OpenAI brain"],
     ["/backup", "export her memory to a file"],
+    ["/update", "install a downloaded update"],
     ["/reset", "wipe everything (asks first)"],
     ["/quit", "say goodbye and close"],
   ];
@@ -1448,6 +1732,24 @@ function renderPool() {
         <button id="job-add" class="btn-solid">Add</button>
       </div>
       <div id="job-list" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="panel-section">
+      <h3>Weather &amp; chemistry tips</h3>
+      <div style="display:flex;gap:8px;">
+        <input id="weather-loc" class="field-input" placeholder="e.g. Dallas" value="${escapeHtml(mem.data.location || "")}">
+        <button id="weather-go" class="btn-solid">Go</button>
+      </div>
+      <div id="weather-out" class="hint" style="margin-top:10px;"></div>
+    </div>
+
+    <div class="panel-section">
+      <h3>Customers (${(mem.data.customers || []).length})</h3>
+      <div style="display:flex;gap:8px;">
+        <input id="cust-input" class="field-input" placeholder="e.g. Smith — 15k gal, sand filter">
+        <button id="cust-add" class="btn-solid">Add</button>
+      </div>
+      <div id="cust-list" style="margin-top:12px;"></div>
     </div>`;
 
   panelBody.innerHTML = html;
@@ -1520,6 +1822,48 @@ function renderPool() {
     renderPool();
   });
   renderJobs();
+
+  // weather
+  const weatherOut = $("weather-out");
+  $("weather-go").addEventListener("click", async () => {
+    const loc = $("weather-loc").value.trim();
+    if (!loc) { toast("Tell me a city first, darlin'."); return; }
+    mem.data.location = loc;
+    mem.save();
+    await loadWeather(loc, weatherOut);
+  });
+  if (mem.data.location) loadWeather(mem.data.location, weatherOut);
+
+  // customers
+  const renderCust = () => {
+    const list = $("cust-list");
+    const customers = mem.data.customers || [];
+    if (!customers.length) {
+      list.innerHTML = '<div class="hint">No customers on file yet.</div>';
+      return;
+    }
+    list.innerHTML = customers.map((c, i) => `
+      <div class="cust-row">
+        <span class="job-num">${i + 1}</span>
+        <span class="cust-text">${escapeHtml(c.text)}</span>
+        <button class="mini-btn cust-del" data-id="${c.id}" title="Remove">✕</button>
+      </div>`).join("");
+    list.querySelectorAll(".cust-del").forEach((b) => b.addEventListener("click", () => {
+      mem.data.customers = mem.data.customers.filter((c) => c.id !== b.dataset.id);
+      mem.save();
+      renderPool();
+    }));
+  };
+  $("cust-add").addEventListener("click", () => {
+    const text = $("cust-input").value.trim();
+    if (!text) return;
+    mem.data.customers = mem.data.customers || [];
+    mem.data.customers.unshift({ id: "c" + Date.now() + Math.random().toString(36).slice(2, 5), text, date: new Date().toISOString() });
+    mem.save();
+    $("cust-input").value = "";
+    renderPool();
+  });
+  renderCust();
 }
 
 /* ---------------- reset + quit ---------------- */
@@ -1569,6 +1913,9 @@ async function boot() {
   mem.data.pool = mem.data.pool || Object.assign({}, Pool.DEFAULT_POOL);
   mem.data.tasks = mem.data.tasks || [];
   mem.data.reminders = mem.data.reminders || [];
+  mem.data.customers = mem.data.customers || [];
+  mem.data.journal = mem.data.journal || [];
+  if (!mem.data.tts_model) mem.data.tts_model = "tts-1";
 
   setupVoices();
   Speaker.enabled = mem.data.voice_on !== false;
@@ -1576,6 +1923,13 @@ async function boot() {
   if (!mem.data.openai_voice) mem.data.openai_voice = "nova";
 
   await refreshSmart();
+  await maybeJournalize();   // roll yesterday's talk into the journal
+
+  // auto-update notices (installed builds only)
+  if (bridge && bridge.onUpdateAvailable) {
+    bridge.onUpdateAvailable((v) => toast(`A new Aqua version (${v}) is downloading…`, 5000));
+    bridge.onUpdateDownloaded(() => toast("Update ready — type /update to install now.", 8000));
+  }
 
   const greeting = brain.greeting();
   addMessage("aqua", greeting);

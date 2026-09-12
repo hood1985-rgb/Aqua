@@ -522,3 +522,65 @@ html, body {
 .job-del:hover { background: rgba(255, 122, 122, 0.15); color: var(--danger); }
 
 select.field-input option { background: #07233b; color: var(--ink); }
+
+/* ---------- Aqua's face ---------- */
+.avatar-wrap { position: relative; display: flex; align-items: center; gap: 10px; }
+#top-avatar {
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--aqua);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.12), 0 6px 20px rgba(70,215,255,0.35);
+  transition: box-shadow 0.25s;
+}
+#top-avatar[data-face="idle"] { animation: idleBob 4.5s ease-in-out infinite; }
+#top-avatar[data-face="talking"] {
+  animation: talkBob 0.55s ease-in-out infinite;
+  box-shadow: 0 0 0 2px var(--aqua), 0 0 26px rgba(70,215,255,0.75);
+}
+#top-avatar[data-face="thinking"] { animation: thinkingSway 1.5s ease-in-out infinite; }
+@keyframes idleBob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+@keyframes talkBob { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-3px) scale(1.05); } }
+@keyframes thinkingSway { 0%,100% { transform: rotate(-1.6deg); } 50% { transform: rotate(1.6deg); } }
+
+.talk-bars { display: flex; align-items: flex-end; gap: 3px; height: 20px; }
+.talk-bars i {
+  width: 4px; height: 4px;
+  background: var(--aqua);
+  border-radius: 2px;
+  opacity: 0.5;
+}
+.avatar-wrap.talking .talk-bars i { opacity: 1; animation: bar .7s infinite ease-in-out; }
+.avatar-wrap.talking .talk-bars i:nth-child(2) { animation-delay: 0.12s; }
+.avatar-wrap.talking .talk-bars i:nth-child(3) { animation-delay: 0.24s; }
+.avatar-wrap.talking .talk-bars i:nth-child(4) { animation-delay: 0.36s; }
+@keyframes bar { 0%,100% { height: 4px; } 50% { height: 18px; } }
+
+/* her face on every message she sends */
+.msg .bubble-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.msg.aqua .bubble-avatar { background: transparent; box-shadow: 0 0 0 1px var(--line); overflow: hidden; }
+
+/* ---------- volume slider ---------- */
+.vol-ctl { display: flex; align-items: center; gap: 12px; }
+.vol-ctl input[type="range"] { flex: 1; accent-color: var(--aqua); height: 22px; cursor: pointer; }
+.vol-val { min-width: 44px; text-align: right; font-weight: 700; color: var(--aqua); font-size: 13px; }
+
+/* ---------- journal ---------- */
+.journal-entry {
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.04);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.journal-date { font-size: 12px; color: var(--aqua); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 5px; }
+.journal-text { font-size: 14px; line-height: 1.55; color: var(--ink); }
+
+/* ---------- customer rows ---------- */
+.cust-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 10px; margin-bottom: 8px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: rgba(255,255,255,0.04);
+}
+.cust-text { flex: 1; font-size: 14px; color: var(--ink); }

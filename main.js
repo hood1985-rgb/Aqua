@@ -18,7 +18,30 @@ const https = require("https");
 
 const DEFAULT_MODEL = "gpt-4o-mini";
 
+/* Auto-updater (optional — lazily loaded so unit tests still run without it). */
+let autoUpdater = null;
+try {
+  autoUpdater = require("electron-updater").autoUpdater;
+} catch (e) {
+  autoUpdater = null;
+}
+
 let mainWindow = null;
+
+function setupAutoUpdater() {
+  if (!autoUpdater) return;
+  try {
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.on("update-available", (info) => {
+      if (mainWindow) mainWindow.webContents.send("update:available", info && info.version);
+    });
+    autoUpdater.on("update-downloaded", () => {
+      if (mainWindow) mainWindow.webContents.send("update:downloaded");
+    });
+    autoUpdater.checkForUpdates().catch(() => {});
+  } catch (e) { /* updates are best-effort */ }
+}
 
 /* ---------------- configuration (OpenAI key + model) ---------------- */
 
@@ -216,7 +239,7 @@ async function transcribeWithWhisper(audio, mimeType, key) {
   return String(res.text || "").trim();
 }
 
-async function synthesizeSpeech(text, voice, speed, key) {
+async function synthesizeSpeech(text, voice, speed, key, model) {
   /* OpenAI's neural text-to-speech — far more human than the system voices. */
   return httpsRequest("https://api.openai.com/v1/audio/speech", {
     method: "POST",
@@ -225,7 +248,7 @@ async function synthesizeSpeech(text, voice, speed, key) {
       "Content-Type": "application/json",
     },
     body: {
-      model: "tts-1-hd",
+      model: model || "tts-1",
       voice: voice || "nova",
       input: text,
       response_format: "mp3",
@@ -283,11 +306,16 @@ function registerIpc() {
     return { text };
   });
 
-  ipcMain.handle("speak", async (event, { text, voice, speed }) => {
+  ipcMain.handle("speak", async (event, { text, voice, speed, model }) => {
     const cfg = loadConfig();
     if (!cfg.openai_api_key) throw new Error("no-key");
-    const buf = await synthesizeSpeech(text, voice, speed, cfg.openai_api_key);
+    const buf = await synthesizeSpeech(text, voice, speed, cfg.openai_api_key, model);
     return { audio: buf.toString("base64"), mime: "audio/mpeg" };
+  });
+
+  ipcMain.handle("update:install", () => {
+    if (autoUpdater) autoUpdater.quitAndInstall();
+    return true;
   });
 
   ipcMain.handle("open-external", (event, url) => {
@@ -341,6 +369,7 @@ app.whenReady().then(() => {
 
   registerIpc();
   createWindow();
+  setupAutoUpdater();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

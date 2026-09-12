@@ -20,5 +20,16 @@ contextBridge.exposeInMainWorld("aqua", {
     ipcRenderer.on("chat:chunk", handler);
     return () => ipcRenderer.removeListener("chat:chunk", handler);
   },
+  onUpdateAvailable: (cb) => {
+    const handler = (_event, version) => cb(version);
+    ipcRenderer.on("update:available", handler);
+    return () => ipcRenderer.removeListener("update:available", handler);
+  },
+  onUpdateDownloaded: (cb) => {
+    const handler = () => cb();
+    ipcRenderer.on("update:downloaded", handler);
+    return () => ipcRenderer.removeListener("update:downloaded", handler);
+  },
+  installUpdate: () => ipcRenderer.invoke("update:install"),
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
 });

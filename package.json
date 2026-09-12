@@ -11,6 +11,9 @@
     "dist": "electron-builder --win",
     "dist:dir": "electron-builder --dir --win"
   },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
   "devDependencies": {
     "electron": "^31.7.7",
     "electron-builder": "^24.13.3"
@@ -19,6 +22,13 @@
     "appId": "com.aqua.cyberbuddy",
     "productName": "Aqua",
     "copyright": "Aqua — your cyber-buddy",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "hood1985-rgb",
+        "repo": "Aqua"
+      }
+    ],
     "directories": {
       "output": "dist"
     },
@@ -30,6 +40,8 @@
       "brain.js",
       "pool.js",
       "tools.js",
+      "journal.js",
+      "weather.js",
       "style.css",
       "favicon.svg",
       "icons/**/*"
