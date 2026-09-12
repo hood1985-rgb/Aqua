@@ -7,6 +7,13 @@ const assert = require("assert");
 const Tools = require("../tools.js");
 const { parseReminder, Reminders, Tasks } = Tools;
 
+// ---- globals for the renderer (app.js uses bare Tasks/Reminders) ----
+// tools.js publishes them on globalThis (browser: window) in addition to Tools.
+assert.strictEqual(globalThis.Tools, Tools, "Tools should be global");
+assert.strictEqual(globalThis.Tasks, Tasks, "Tasks should be a global");
+assert.strictEqual(globalThis.Reminders, Reminders, "Reminders should be a global");
+console.log("[ok] Tasks/Reminders exposed as globals for app.js");
+
 // ---- duration parsing ----
 let r = parseReminder("in 20 minutes to check the pH");
 assert.ok(r, "should parse a duration");

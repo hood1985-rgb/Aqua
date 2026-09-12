@@ -123,5 +123,7 @@
 
   const Tools = { parseReminder, Reminders, Tasks };
   global.Tools = Tools;
+  global.Tasks = Tasks;       // app.js uses these bare globals too
+  global.Reminders = Reminders;
   if (typeof module !== "undefined" && module.exports) module.exports = Tools;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -515,9 +515,10 @@ function streamSmartReply(text) {
         const final = (res && res.reply) ? res.reply : acc;
         bubble.textContent = final || "Hmm, my brain came back empty. Try me again?";
         scrollToBottom();
-        sentenceBuf = final || "";
-        flush(true);
-        if (!spoke && final) Speaker.say(final);
+        // Speak only what's left: the buffered tail we haven't said yet. If no
+        // chunks came through at all (sentenceBuf empty), say the whole reply.
+        const leftover = (sentenceBuf.trim() || (!spoke ? final : "")).trim();
+        if (leftover) { Speaker.say(leftover); spoke = true; }
         resolve(final || "");
       })
       .catch((err) => {
@@ -1239,6 +1240,7 @@ function logDayExchange(u, a) {
   }
   mem.data.daily.lines.push({ u, a });
   if (mem.data.daily.lines.length > 500) mem.data.daily.lines = mem.data.daily.lines.slice(-500);
+  mem.save();   // persist as we go so a closed window can't lose the day
 }
 
 async function journalizeDay(date, lines) {
@@ -1916,6 +1918,7 @@ async function boot() {
   mem.data.customers = mem.data.customers || [];
   mem.data.journal = mem.data.journal || [];
   if (!mem.data.tts_model) mem.data.tts_model = "tts-1";
+  if (mem.data.volume == null) mem.data.volume = 1.2;   // louder by default
 
   setupVoices();
   Speaker.enabled = mem.data.voice_on !== false;
