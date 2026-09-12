@@ -584,3 +584,21 @@ select.field-input option { background: #07233b; color: var(--ink); }
   background: rgba(255,255,255,0.04);
 }
 .cust-text { flex: 1; font-size: 14px; color: var(--ink); }
+
+/* ---------- speaker chip (who she's talking with) ---------- */
+.speaker-chip {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  color: var(--aqua);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.03);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

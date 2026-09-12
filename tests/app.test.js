@@ -131,6 +131,7 @@ const bridge = {
     }
   }),
   transcribe: async () => ({ text: "" }),
+  identifySpeaker: async (audio, mime, speakers) => ({ text: "Hey Aqua", speaker: "Robert" }),
   speak: async () => { throw new Error("skip neural audio in harness"); },
   onChatChunk: (cb) => { chatChunkCb = cb; return () => {}; },
   onUpdateAvailable: (cb) => { updateNotices.push("available"); return () => { cb("1.0.1"); }; },
@@ -139,6 +140,16 @@ const bridge = {
   openExternal: async () => {},
 };
 globalThis.aqua = bridge;
+
+/* Pre-seed the boss profile with one enrolled voice so speaker recognition
+   has a roster to match against. (Must happen before app.js loads `mem`.) */
+store.set("aqua.profile.v1", JSON.stringify({
+  created: new Date().toISOString(),
+  name: null, sessions: 0, last_seen: null,
+  facts: [], asked_questions: [], qa: [], recent_exchanges: [],
+  voice_on: true, voice_id: null, rate: 1.0, volume: 1.2,
+  people: [{ id: "pRobert", name: "Robert", ref: "QUJDRA==", refMime: "audio/webm" }],
+}));
 
 /* ---------------- load modules as the browser would ---------------- */
 const brainMod = require(path.join(APP, "brain.js"));
@@ -254,6 +265,26 @@ function memoryJSON() {
   console.log("\n— volume default —");
   console.log("  mem volume:", mem3.volume);
   assert(mem3.volume === 1.2, "default volume should be persisted as 1.2 (louder)");
+
+  // speaker recognition — route a turn to an enrolled person's own memory
+  if (SCENARIO === "local") {
+    console.log("\n— speaker recognition & per-person memory —");
+    await globalThis.handleUserText("I have two dogs.", "Robert");
+    await sleep(150);
+    const personMem = JSON.parse(store.get("aqua.profile.v1:person:pRobert"));
+    assert(personMem && Array.isArray(personMem.facts), "Robert should have his own memory profile");
+    assert(personMem.facts.some((f) => /two dogs/i.test(f.text)), "Robert's memory should learn the fact");
+    const bossMem = JSON.parse(store.get("aqua.profile.v1"));
+    assert(!(bossMem.facts || []).some((f) => /two dogs/i.test(f.text)), "boss memory should NOT get Robert's fact");
+    console.log("  Robert's facts:", JSON.stringify(personMem.facts.map((f) => f.text)));
+    console.log("  speaker chip:", getEl("speaker-chip").textContent);
+    assert(getEl("speaker-chip").textContent === "with Robert", "chip should show who she's talking with");
+    await globalThis.handleUserText("/whoami", "Robert");
+    await sleep(90);
+    const who = transcript().filter((m) => m.who === "aqua").slice(-1)[0];
+    assert(/Robert/.test(who.text), "/whoami should name Robert");
+    console.log("  /whoami reply:", who.text);
+  }
 
   if (SCENARIO === "openai") {
     console.log("\n— OpenAI streaming sentences spoken —");

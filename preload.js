@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld("aqua", {
   clearConfig: () => ipcRenderer.invoke("config:clear"),
   chat: (payload) => ipcRenderer.invoke("chat", payload),
   transcribe: (audio, mimeType) => ipcRenderer.invoke("transcribe", { audio, mimeType }),
+  identifySpeaker: (audio, mimeType, speakers) =>
+    ipcRenderer.invoke("transcribe:who", { audio, mimeType, speakers }),
   speak: (payload) => ipcRenderer.invoke("speak", payload),
   onChatChunk: (cb) => {
     const handler = (_event, delta) => cb(delta);

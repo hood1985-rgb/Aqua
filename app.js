@@ -54,6 +54,74 @@ let brain = new Brain(mem);
 /* smart brain state (OpenAI) */
 const smart = { on: false, model: "gpt-4o-mini" };
 
+/* ---------------- who's talking (speaker recognition) ---------------- */
+const personMemories = new Map();      // person id -> their own Memory instance
+let activePersonId = null;             // null = the boss (default profile)
+const greetedThisSession = new Set();  // people she's already said hi to
+
+function roster() {
+  return mem.data.people || [];
+}
+
+function personById(id) {
+  return roster().find((p) => p.id === id) || null;
+}
+
+function personByName(name) {
+  const q = String(name || "").toLowerCase();
+  return roster().find((p) => p.name && String(p.name).toLowerCase() === q) || null;
+}
+
+function getPersonMemory(id) {
+  if (!id) return mem;
+  if (!personMemories.has(id)) {
+    const m = new Memory(window.localStorage, "aqua.profile.v1:person:" + id);
+    const p = personById(id);
+    if (p && p.name && !m.data.name) m.data.name = p.name;
+    personMemories.set(id, m);
+  }
+  return personMemories.get(id);
+}
+
+function getSpeakerBrain() {
+  if (!activePersonId) return brain;
+  const m = getPersonMemory(activePersonId);
+  if (!m._brain) m._brain = new Brain(m);
+  return m._brain;
+}
+
+function getSpeakerMemory() {
+  return activePersonId ? getPersonMemory(activePersonId) : mem;
+}
+
+function speakerName() {
+  if (!activePersonId) return null;
+  const p = personById(activePersonId);
+  return p ? p.name : null;
+}
+
+function updateSpeakerChip() {
+  const el = $("speaker-chip");
+  if (!el) return;
+  const name = speakerName();
+  el.textContent = name ? `with ${name}` : "the boss";
+  el.title = name
+    ? `She's talking with ${name}`
+    : "She's talking with the boss (no one else is on the mic)";
+}
+
+function setActiveSpeaker(name) {
+  const p = personByName(name);
+  activePersonId = p ? p.id : null;
+  updateSpeakerChip();
+  if (p && !greetedThisSession.has(p.id)) {
+    greetedThisSession.add(p.id);
+    addDivider(`now talking with ${p.name}`);
+    toast(`Heard ${p.name} — hey there.`);
+  }
+  return p || null;
+}
+
 /* ---------------- her voice (speaking) ---------------- */
 const OPENAI_VOICES = [
   ["nova", "Nova — bright & cheerful"],
@@ -401,9 +469,13 @@ function send() {
 }
 
 /* ---------------- core send/receive ---------------- */
-async function handleUserText(text) {
+async function handleUserText(text, whoName) {
   text = (text || "").trim();
   if (!text) return;
+  if (whoName) setActiveSpeaker(whoName);
+  const sBrain = getSpeakerBrain();     // the person she's talking with
+  const sMem = getSpeakerMemory();
+
   Speaker.stop();           // stop talking the moment the user starts typing
   addMessage("user", text);
   input.value = "";
@@ -424,38 +496,38 @@ async function handleUserText(text) {
       action = r.action;
       if (r.voice_on !== undefined) setVoiceUI(r.voice_on);
       if (reply) addMessage("aqua", reply);
-    } else if (brain.isExit(text)) {
+    } else if (sBrain.isExit(text)) {
       hideTyping();
-      reply = brain.farewell();
-      mem.addExchange(text, reply);
-      mem.save();
+      reply = sBrain.farewell();
+      sMem.addExchange(text, reply);
+      sMem.save();
       Speaker.say(reply);
       addMessage("aqua", reply);
       action = "quit";
     } else if (smart.on && bridge) {
-      brain.learnFrom(text);  // she still learns, even with an OpenAI brain
+      sBrain.learnFrom(text);  // she still learns, even with an OpenAI brain
       try {
         hideTyping();
         reply = await streamSmartReply(text);   // speaks sentence-by-sentence
-        mem.addExchange(text, reply);
-        mem.save();
+        sMem.addExchange(text, reply);
+        sMem.save();
       } catch (e) {
         if (String(e && e.message).includes("no-key")) {
           smart.on = false;
           updateBrainStatus();
         }
         toast("OpenAI hiccup — I'll use my built-in brain this once.");
-        reply = brain.respond(text);
-        mem.addExchange(text, reply);
-        mem.save();
+        reply = sBrain.respond(text);
+        sMem.addExchange(text, reply);
+        sMem.save();
         Speaker.say(reply);
         addMessage("aqua", reply);
       }
     } else {
       hideTyping();
-      reply = brain.respond(text);
-      mem.addExchange(text, reply);
-      mem.save();
+      reply = sBrain.respond(text);
+      sMem.addExchange(text, reply);
+      sMem.save();
       Speaker.say(reply);
       addMessage("aqua", reply);
     }
@@ -478,8 +550,10 @@ async function handleUserText(text) {
    speaking each sentence as soon as it's complete — she responds sooner. */
 function streamSmartReply(text) {
   return new Promise((resolve, reject) => {
-    const messages = [{ role: "system", content: brain.systemPrompt() }]
-      .concat(mem.historyForLLM())
+    const sBrain = getSpeakerBrain();
+    const sMem = getSpeakerMemory();
+    const messages = [{ role: "system", content: sBrain.systemPrompt() }]
+      .concat(sMem.historyForLLM())
       .concat([{ role: "user", content: text }]);
 
     const bubble = addMessage("aqua", "");
@@ -537,6 +611,7 @@ function handleAction(action) {
     case "show_settings": openPanel("settings"); break;
     case "show_pool": openPanel("pool"); break;
     case "show_journal": openPanel("journal"); break;
+    case "show_people": openPanel("people"); break;
     case "toggle_handsfree": setHandsfree(!handsfreeOn); break;
     case "toggle_wake": setWake(!wakeOn); break;
     case "do_backup": exportMemory(); break;
@@ -570,6 +645,8 @@ const HELP_TEXT = `Commands you can type anytime:
   /timer 5         a quick timer (minutes)
   /reminders       list what's coming up
   /journal         her daily journal of your time together
+  /people          enroll voices so she knows who's talking
+  /whoami          who she thinks is on the mic right now
   /brain           which brain she's thinking with
   /settings        connect her OpenAI brain (API key)
   /backup          export her memory to a file
@@ -871,6 +948,24 @@ function handleCommand(line) {
       out.action = "show_journal";
       break;
 
+    case "/people":
+      out.reply = "Here's who I can recognize — record a voice for each person.";
+      out.action = "show_people";
+      break;
+
+    case "/whoami": {
+      const name = speakerName();
+      if (name) {
+        out.reply = `I'm talkin' with ${name} right now.`;
+      } else {
+        const enrolled = roster().filter((p) => p.ref);
+        out.reply = enrolled.length
+          ? "Not sure who's at the mic this turn — if it's someone I know, try again with less background noise."
+          : "I haven't met any other voices yet — /people to enroll someone.";
+      }
+      break;
+    }
+
     case "/update":
       if (bridge && bridge.installUpdate) { bridge.installUpdate(); out.reply = "Installing the update…"; }
       else { out.reply = "No update waiting."; }
@@ -916,7 +1011,7 @@ btnMic.addEventListener("click", () => {
   if (busy) return;
   recordOnce().then((res) => {
     if (!res) return;
-    if (res.text) handleUserText(res.text);
+    if (res.text) handleUserText(res.text, res.speaker);
     else if (res.message) toast(res.message);
   });
 });
@@ -965,12 +1060,25 @@ async function recordOnce() {
 
   const blob = new Blob(micChunks, { type: rec.mimeType || mimeType || "audio/webm" });
   const audio = await blob.arrayBuffer();
+  const mime = rec.mimeType || mimeType || "audio/webm";
   try {
-    const res = await bridge.transcribe(audio, rec.mimeType || mimeType || "audio/webm");
+    // If people are enrolled, ask OpenAI who's talking (and transcribe in one go).
+    const people = roster().filter((p) => p && p.name && p.ref);
+    if (people.length && bridge.identifySpeaker) {
+      const res = await bridge.identifySpeaker(audio, mime, people);
+      if (res.text) return { text: res.text, speaker: res.speaker };
+      return { message: "I didn't catch that — try again, or just type." };
+    }
+    const res = await bridge.transcribe(audio, mime);
     if (res.text) return { text: res.text };
     return { message: "I didn't catch that — try again, or just type." };
   } catch (e) {
     console.error(e);
+    // Speaker matching hiccup — fall back to plain transcription so she still hears words.
+    try {
+      const res = await bridge.transcribe(audio, mime);
+      if (res.text) return { text: res.text };
+    } catch (e2) { /* fall through */ }
     return { message: "Couldn't transcribe — check your API key and internet." };
   }
 }
@@ -1101,7 +1209,7 @@ async function handleWakeTrigger() {
       setWake(false);
       toast("Wake word off.");
     } else {
-      await handleUserText(res.text);
+      await handleUserText(res.text, res.speaker);
     }
   }
   wakeBusy = false;
@@ -1119,7 +1227,7 @@ async function handsfreeLoop() {
         toast("Hands-free off.");
         break;
       }
-      await handleUserText(res.text);
+      await handleUserText(res.text, res.speaker);
       await sleep(900);
     } else if (res && res.message) {
       await sleep(600);
@@ -1238,16 +1346,21 @@ function logDayExchange(u, a) {
   if (!mem.data.daily || mem.data.daily.date !== today) {
     mem.data.daily = { date: today, lines: [] };
   }
-  mem.data.daily.lines.push({ u, a });
+  mem.data.daily.lines.push({ u, a, who: speakerName() });
   if (mem.data.daily.lines.length > 500) mem.data.daily.lines = mem.data.daily.lines.slice(-500);
   mem.save();   // persist as we go so a closed window can't lose the day
 }
 
 async function journalizeDay(date, lines) {
+  // Name the speaker on each line so the entry reads "Robert: …" naturally.
+  const tagged = (lines || []).map((l) => ({
+    u: l && l.who ? `${l.who}: ${l.u}` : (l && l.u),
+    a: l && l.a,
+  }));
   const dayFacts = mem.allFacts().filter((f) => String(f.date || "").slice(0, 10) === date);
   if (smart.on && bridge) {
     try {
-      const prompt = Journal.buildJournalPrompt({ date, transcript: lines, name: mem.name });
+      const prompt = Journal.buildJournalPrompt({ date, transcript: tagged, name: mem.name });
       const res = await bridge.chat({
         messages: [{ role: "system", content: "You are Aqua." }, { role: "user", content: prompt }],
         model: smart.model,
@@ -1256,7 +1369,7 @@ async function journalizeDay(date, lines) {
       if (text) return { date, text };
     } catch (e) { /* fall through to the local summary */ }
   }
-  return { date, text: Journal.summarizeLocal({ lines, facts: dayFacts, name: mem.name }) };
+  return { date, text: Journal.summarizeLocal({ lines: tagged, facts: dayFacts, name: mem.name }) };
 }
 
 async function maybeJournalize() {
@@ -1332,6 +1445,118 @@ async function loadWeather(city, outEl) {
   }
 }
 
+/* ---------------- people (voice enrollment) ---------------- */
+function arrayBufferToBase64(buf) {
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+
+/* Record a short clip for speaker enrollment — separate from the chat mic. */
+function captureClip(seconds = 6) {
+  return new Promise(async (resolve, reject) => {
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      reject(new Error("Microphone unavailable or blocked."));
+      return;
+    }
+    const mimeType = micMimeType();
+    const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    const chunks = [];
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    rec.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      const blob = new Blob(chunks, { type: rec.mimeType || mimeType || "audio/webm" });
+      const buf = await blob.arrayBuffer();
+      resolve({ audio: buf, mime: rec.mimeType || mimeType || "audio/webm" });
+    };
+    rec.onerror = () => reject(new Error("Recording failed."));
+    rec.start(250);
+    setTimeout(() => { try { if (rec.state !== "inactive") rec.stop(); } catch (e) {} }, seconds * 1000);
+  });
+}
+
+function renderPeople() {
+  panelTitle.textContent = "People & voices";
+  const people = roster();
+
+  let html = `
+    <div class="panel-section">
+      <h3>Who she can recognize</h3>
+      <p class="hint">Record a few seconds of each person talking and Aqua will know who's at the mic — and remember each of you separately. Handles up to 4 voices, matched by OpenAI with your key.</p>`;
+
+  if (!people.length) html += `<div class="hint">Nobody enrolled yet — add a voice below.</div>`;
+  for (const p of people) {
+    html += `
+      <div class="cust-row">
+        <span class="job-num">${escapeHtml(String(p.name || "?").slice(0, 1).toUpperCase())}</span>
+        <span class="cust-text"><b>${escapeHtml(p.name)}</b>${p.ref ? "" : ' <span class="hint">(no voice yet)</span>'}</span>
+        <button class="mini-btn person-rerecord" data-id="${escapeHtml(p.id)}" title="Re-record voice">🎙️</button>
+        <button class="mini-btn person-del" data-id="${escapeHtml(p.id)}" title="Remove">✕</button>
+      </div>`;
+  }
+
+  html += `</div>
+    <div class="panel-section">
+      <h3>Add someone</h3>
+      <div style="display:flex;gap:8px;">
+        <input id="person-name" class="field-input" placeholder="Name, e.g. Robert">
+        <button id="person-record" class="btn-solid">Record voice</button>
+      </div>
+      <p class="hint" id="person-status" style="margin-top:10px;">Type a name, tap <b>Record voice</b>, then talk for a few seconds.</p>
+      <p class="hint" style="margin-top:6px;">The clip stays on this PC and is only sent to OpenAI to match who's speaking.</p>
+    </div>`;
+  panelBody.innerHTML = html;
+
+  const nameInput = $("person-name");
+  const status = $("person-status");
+
+  $("person-record").addEventListener("click", async () => {
+    const name = nameInput.value.trim();
+    if (!name) { toast("Give me a name first, darlin'."); return; }
+    let person = personByName(name);
+    if (!person && roster().length >= 4) { toast("I can keep up to 4 voices straight."); return; }
+    if (!bridge || !smart.on) { toast("Add your OpenAI key first (⚙️ Settings)."); return; }
+    status.textContent = `Listening… talk for a few seconds, ${name}.`;
+    try {
+      const { audio, mime } = await captureClip(6);
+      status.textContent = "Saving your voice…";
+      if (!person) {
+        person = { id: "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), name, created: new Date().toISOString() };
+        mem.data.people = mem.data.people || [];
+        mem.data.people.push(person);
+      }
+      person.name = name;
+      person.ref = arrayBufferToBase64(audio);
+      person.refMime = mime;
+      mem.save();
+      status.textContent = `Got ${name}'s voice — she'll know them now.`;
+      renderPeople();
+      updateSpeakerChip();
+    } catch (e) {
+      console.error(e);
+      status.textContent = "Couldn't record — check the microphone permission.";
+    }
+  });
+
+  panelBody.querySelectorAll(".person-rerecord").forEach((b) => b.addEventListener("click", () => {
+    const p = personById(b.dataset.id);
+    if (p) { nameInput.value = p.name; $("person-record").click(); }
+  }));
+
+  panelBody.querySelectorAll(".person-del").forEach((b) => b.addEventListener("click", () => {
+    mem.data.people = roster().filter((p) => p.id !== b.dataset.id);
+    personMemories.delete(b.dataset.id);
+    if (activePersonId === b.dataset.id) setActiveSpeaker(null);
+    mem.save();
+    renderPeople();
+    updateSpeakerChip();
+  }));
+}
+
 /* ---------------- panels ---------------- */
 const overlay = $("overlay");
 const panel = $("panel");
@@ -1345,6 +1570,7 @@ function openPanel(which) {
   else if (which === "settings") renderSettings();
   else if (which === "pool") renderPool();
   else if (which === "journal") renderJournal();
+  else if (which === "people") renderPeople();
   else return;
   panel.classList.remove("hidden");
   panel.classList.add("open");
@@ -1365,6 +1591,7 @@ $("btn-help").addEventListener("click", () => openPanel("help"));
 $("btn-settings").addEventListener("click", () => openPanel("settings"));
 $("btn-pool").addEventListener("click", () => openPanel("pool"));
 $("btn-journal").addEventListener("click", () => openPanel("journal"));
+$("btn-people").addEventListener("click", () => openPanel("people"));
 
 const KIND_LABEL = {
   favorite: "Favorites", like: "Likes", dislike: "Dislikes", work: "Work",
@@ -1605,6 +1832,8 @@ function renderHelp() {
     ["/remind in 20 min …", "set a reminder"],
     ["/timer 5", "a quick timer"],
     ["/journal", "her daily journal"],
+    ["/people", "enroll voices (she'll know who's talking)"],
+    ["/whoami", "who she thinks is on the mic"],
     ["/brain", "which brain she's using"],
     ["/settings", "connect her OpenAI brain"],
     ["/backup", "export her memory to a file"],
@@ -1884,6 +2113,10 @@ $("modal-confirm").addEventListener("click", () => {
   Object.assign(mem.data, keep);
   mem.save();
   brain = new Brain(mem);
+  activePersonId = null;            // also forget who's on the mic
+  personMemories.clear();
+  greetedThisSession.clear();
+  updateSpeakerChip();
   chatScroll.innerHTML = "";
   const greeting = brain.greeting();
   addMessage("aqua", greeting);
@@ -1917,10 +2150,12 @@ async function boot() {
   mem.data.reminders = mem.data.reminders || [];
   mem.data.customers = mem.data.customers || [];
   mem.data.journal = mem.data.journal || [];
+  mem.data.people = mem.data.people || [];
   if (!mem.data.tts_model) mem.data.tts_model = "tts-1";
   if (mem.data.volume == null) mem.data.volume = 1.2;   // louder by default
 
   setupVoices();
+  updateSpeakerChip();
   Speaker.enabled = mem.data.voice_on !== false;
   setVoiceUI(Speaker.enabled);
   if (!mem.data.openai_voice) mem.data.openai_voice = "nova";

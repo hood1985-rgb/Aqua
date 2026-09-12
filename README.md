@@ -36,6 +36,11 @@ own direct calls to OpenAI.
   preview them, and set her volume louder or softer. Falls back to Windows'
   voice offline.
 - 🎤 **Voice in** — she hears you with **OpenAI Whisper**.
+- 👥 **She knows who's talking** — enroll up to 4 people in the 👥 People panel
+  (a few seconds of each voice) and Aqua matches who's at the mic with OpenAI's
+  speaker-diarization model. She greets each person by name and keeps
+  **separate memories for each of you**, while the pool shop and journal stay
+  the boss's. Ask `/whoami` to see who she thinks she's talking with.
 - 😊 **A face to talk to** — she appears as an animated Navy-veteran gal up top,
   who perks up, leans in to think, and talks along with you in the chat.
 - 📔 **A daily journal** — at the end of each day she writes up what the two of
@@ -130,6 +135,8 @@ using her built-in local brain, speaking with Windows' built-in voice.
 | `/customer add …` / `/customers` / `/customer del 1` | Log and manage customers |
 | `/weather set Dallas` | Set your city for weather-aware pool tips |
 | `/journal` | Open her daily journal |
+| `/people` | Enroll voices so she knows who's talking |
+| `/whoami` | See who she thinks is on the mic |
 | `/remind in 20 min …` / `/timer 5` | Reminders & timers |
 | `/brain` | See which brain she's using |
 | `/settings` | Connect her OpenAI brain |
@@ -137,6 +144,26 @@ using her built-in local brain, speaking with Windows' built-in voice.
 | `/update` | Install a downloaded update |
 | `/reset` | Wipe her memory completely (she'll ask first) |
 | `/quit` | Say goodbye and exit |
+
+## Knowing who's talking
+
+Aqua can tell the people in your house apart by voice, using OpenAI's
+`gpt-4o-transcribe-diarize` model (same key as everything else):
+
+1. Click **👥 People** (or type `/people`).
+2. Type a name and tap **Record voice**, then talk for a few seconds.
+3. Do the same for anyone else (up to 4 people).
+
+From then on, when someone talks into the mic she says their name and keeps
+**separate memories for each person** — facts, names, and conversation history
+stay with the right voice. The pool board, customers, and journal remain the
+boss's. The top of the window always shows who she's talking with, and
+`/whoami` tells you who she thinks is speaking.
+
+A few honest caveats: it's voice *matching*, not a fingerprint — background
+noise, overlapping talk, a cold, or a recording can throw it off, and it costs
+a little extra per minute of audio. The short voice clips stay on your PC and
+are only sent to OpenAI to match who's speaking.
 
 ## How she learns
 

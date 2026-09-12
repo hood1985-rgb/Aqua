@@ -95,7 +95,7 @@ async function main() {
   console.log("[ok] key cleared");
 
   // 5) SSE streaming parser
-  const { extractDeltaFromSSELine } = mainExports;
+  const { extractDeltaFromSSELine, buildDiarizeMultipart, parseDiarized } = mainExports;
   if (extractDeltaFromSSELine('data: {"choices":[{"delta":{"content":"Hi"}}]}') !== "Hi") {
     throw new Error("SSE content delta not extracted");
   }
@@ -104,6 +104,46 @@ async function main() {
   if (extractDeltaFromSSELine("event: ping") !== null) throw new Error("non-data line should be null");
   if (extractDeltaFromSSELine('data: {"choices":[{"delta":{}}]}') !== null) throw new Error("empty delta should be null");
   console.log("[ok] SSE streaming parser");
+
+  // 6) speaker-diarization multipart builder
+  const { boundary, body } = buildDiarizeMultipart(
+    Buffer.from("AUDIOBYTES"),
+    "audio/webm",
+    [
+      { name: "Robert", ref: "QUJD", refMime: "audio/webm" },
+      { name: "Sam", ref: "REVG" },               // refMime defaults to webm
+      { name: "NoRef", ref: "" },                  // skipped
+    ],
+    "BOUNDARY"
+  );
+  const bodyStr = body.toString("utf8");
+  if (boundary !== "BOUNDARY") throw new Error("custom boundary not respected");
+  if (!bodyStr.includes('name="model"\r\n\r\ngpt-4o-transcribe-diarize')) throw new Error("missing diarize model field");
+  if (!bodyStr.includes('name="response_format"\r\n\r\ndiarized_json')) throw new Error("missing response_format field");
+  if (!bodyStr.includes('name="known_speaker_names[]"\r\n\r\nRobert')) throw new Error("missing Robert name field");
+  if (!bodyStr.includes('name="known_speaker_names[]"\r\n\r\nSam')) throw new Error("missing Sam name field");
+  if (!bodyStr.includes("data:audio/webm;base64,QUJD")) throw new Error("missing Robert reference data URL");
+  if (!bodyStr.includes("data:audio/webm;base64,REVG")) throw new Error("Sam reference should default to webm data URL");
+  if (bodyStr.includes("NoRef")) throw new Error("speaker without a ref should be skipped");
+  if (!bodyStr.includes("AUDIOBYTES")) throw new Error("audio file part missing");
+  console.log("[ok] diarization multipart builder");
+
+  // 7) diarized_json parser
+  const parsed = parseDiarized({
+    segments: [
+      { speaker: "Robert", text: "Hey Aqua," },
+      { speaker: "Robert", text: "check the pH." },
+      { speaker: "speaker_1", text: "noise" },
+    ],
+  });
+  if (parsed.text !== "Hey Aqua, check the pH. noise") throw new Error("diarized text join wrong: " + parsed.text);
+  if (parsed.speaker !== "Robert") throw new Error("majority speaker should be Robert");
+  const anon = parseDiarized({ segments: [{ speaker: "speaker_0", text: "hi" }] });
+  if (anon.speaker !== null) throw new Error("anonymous speaker_0 should map to null (no match)");
+  if (anon.text !== "hi") throw new Error("anonymous text should still come through");
+  const empty = parseDiarized({ segments: [] });
+  if (empty.text !== "" || empty.speaker !== null) throw new Error("empty segments should give empty text + null speaker");
+  console.log("[ok] diarized_json parser");
 
   console.log("\nALL CHECKS PASSED - main process logic is sound.");
 }

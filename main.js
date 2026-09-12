@@ -239,6 +239,73 @@ async function transcribeWithWhisper(audio, mimeType, key) {
   return String(res.text || "").trim();
 }
 
+/* ---------------- OpenAI speaker diarization ("who's talking?") ---------------- */
+
+const DIARIZE_MODEL = "gpt-4o-transcribe-diarize";
+
+/* Build a multipart body for the diarization endpoint.
+   Pure function — exported for unit testing. */
+function buildDiarizeMultipart(audio, mimeType, speakers, boundary) {
+  const ext = String(mimeType || "").includes("webm") ? "webm" : "wav";
+  boundary = boundary || "----aqua" + Date.now().toString(16) + Math.random().toString(16).slice(2);
+  const chunks = [];
+  const field = (name, value) =>
+    chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`));
+  field("model", DIARIZE_MODEL);
+  field("response_format", "diarized_json");
+  for (const s of (speakers || []).slice(0, 4)) {
+    if (!s || !s.name || !s.ref) continue;
+    field("known_speaker_names[]", s.name);
+    field("known_speaker_references[]", `data:${s.refMime || "audio/webm"};base64,${s.ref}`);
+  }
+  chunks.push(
+    Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="aqua.${ext}"\r\nContent-Type: ${mimeType || "audio/webm"}\r\n\r\n`
+    )
+  );
+  chunks.push(Buffer.isBuffer(audio) ? audio : Buffer.from(audio));
+  chunks.push(Buffer.from(`\r\n--${boundary}--\r\n`));
+  return { boundary, body: Buffer.concat(chunks) };
+}
+
+/* Turn a diarized_json response into { text, speaker }.
+   Pure function — exported for unit testing. */
+function parseDiarized(res) {
+  const segments = (res && res.segments) || [];
+  const text = segments
+    .map((s) => (s && s.text ? String(s.text).trim() : ""))
+    .filter(Boolean)
+    .join(" ");
+  // Pick the label attached to the most speech — that's the person talking.
+  const counts = {};
+  let best = null;
+  let bestN = 0;
+  for (const seg of segments) {
+    const who = seg && seg.speaker ? String(seg.speaker).trim() : "";
+    if (!who) continue;
+    counts[who] = (counts[who] || 0) + 1;
+    if (counts[who] > bestN) { bestN = counts[who]; best = who; }
+  }
+  let speaker = best || null;
+  // Anonymous labels like "speaker_1" mean "somebody I don't know" — no match.
+  if (speaker && /^(speaker|spk)[_\s-]?\d*$/i.test(speaker)) speaker = null;
+  return { text, speaker };
+}
+
+async function transcribeWithDiarize(audio, mimeType, speakers, key) {
+  const { boundary, body } = buildDiarizeMultipart(audio, mimeType, speakers);
+  const res = await httpsRequest("https://api.openai.com/v1/audio/transcriptions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": `multipart/form-data; boundary=${boundary}`,
+    },
+    body,
+    timeout: 90000,
+  });
+  return parseDiarized(res);
+}
+
 async function synthesizeSpeech(text, voice, speed, key, model) {
   /* OpenAI's neural text-to-speech — far more human than the system voices. */
   return httpsRequest("https://api.openai.com/v1/audio/speech", {
@@ -304,6 +371,14 @@ function registerIpc() {
     const buf = Buffer.from(audio);   // audio is an ArrayBuffer from the renderer
     const text = await transcribeWithWhisper(buf, mimeType, cfg.openai_api_key);
     return { text };
+  });
+
+  ipcMain.handle("transcribe:who", async (event, { audio, mimeType, speakers }) => {
+    const cfg = loadConfig();
+    if (!cfg.openai_api_key) throw new Error("no-key");
+    const buf = Buffer.from(audio);
+    const { text, speaker } = await transcribeWithDiarize(buf, mimeType, speakers, cfg.openai_api_key);
+    return { text, speaker };
   });
 
   ipcMain.handle("speak", async (event, { text, voice, speed, model }) => {
@@ -382,5 +457,5 @@ app.on("window-all-closed", () => {
 
 /* Export the SSE parser for unit tests (harmless when run by Electron). */
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { extractDeltaFromSSELine };
+  module.exports = { extractDeltaFromSSELine, buildDiarizeMultipart, parseDiarized };
 }
