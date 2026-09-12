@@ -48,7 +48,9 @@ own direct calls to OpenAI.
   (free Open-Meteo, no key needed) and tells you what the weather means for
   your chlorine, skimming, and stabilizer.
 - 🔄 **Auto-updates** — on launch she quietly checks for a newer release and
-  lets you install it with `/update`.
+  lets you install it with `/update`. (Updates ship when the app's version is
+  bumped and a new release is published; she checks the GitHub Releases feed
+  automatically.)
 - 📝 **Real memory** — everything you tell her is saved privately on *your* PC,
   and you can export/restore it to a file.
 - 🔒 **Private by design** — no account, no telemetry. Your API key is stored
