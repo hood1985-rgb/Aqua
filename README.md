@@ -31,10 +31,24 @@ own direct calls to OpenAI.
 - ⏰ **Reminders & timers** — "remind me in 20 minutes to check the pH." She
   remembers, hollers at you, and can send desktop notifications.
 - 🎙️ **"Hey Aqua" wake word** — hands-free start whenever you want it.
-- 🗣️ **A genuinely human voice** — OpenAI's neural text-to-speech (`tts-1-hd`):
-  pick from 10 lifelike voices and preview them. Falls back to Windows' voice
-  offline.
+- 🗣️ **A genuinely human voice** — OpenAI's neural text-to-speech (`tts-1` for a
+  snappy reply, `tts-1-hd` for a richer one): pick from 10 lifelike voices and
+  preview them, and set her volume louder or softer. Falls back to Windows'
+  voice offline.
 - 🎤 **Voice in** — she hears you with **OpenAI Whisper**.
+- 😊 **A face to talk to** — she appears as an animated Navy-veteran gal up top,
+  who perks up, leans in to think, and talks along with you in the chat.
+- 📔 **A daily journal** — at the end of each day she writes up what the two of
+  you talked about (OpenAI-written when connected, or a local summary). Read it
+  anytime in the 📓 Journal panel, or with `/journal`.
+- 📇 **A customer log** — keep Hood's Pool Service customers straight:
+  names, gallons, equipment — add and remove them from the 🧰 panel or with
+  `/customer`.
+- ⛅ **Weather-aware pool tips** — give her a city and she checks the forecast
+  (free Open-Meteo, no key needed) and tells you what the weather means for
+  your chlorine, skimming, and stabilizer.
+- 🔄 **Auto-updates** — on launch she quietly checks for a newer release and
+  lets you install it with `/update`.
 - 📝 **Real memory** — everything you tell her is saved privately on *your* PC,
   and you can export/restore it to a file.
 - 🔒 **Private by design** — no account, no telemetry. Your API key is stored
@@ -111,10 +125,14 @@ using her built-in local brain, speaking with Windows' built-in voice.
 | `/pool set 15000` | Tell her your pool size |
 | `/chem ph 8.2 7.5` | Pool chemistry math (fc, ph, ta, ch, cya, salt) |
 | `/job add …` / `/jobs` / `/job done 1` | Log and manage service jobs |
+| `/customer add …` / `/customers` / `/customer del 1` | Log and manage customers |
+| `/weather set Dallas` | Set your city for weather-aware pool tips |
+| `/journal` | Open her daily journal |
 | `/remind in 20 min …` / `/timer 5` | Reminders & timers |
 | `/brain` | See which brain she's using |
 | `/settings` | Connect her OpenAI brain |
 | `/backup` | Export her memory to a file |
+| `/update` | Install a downloaded update |
 | `/reset` | Wipe her memory completely (she'll ask first) |
 | `/quit` | Say goodbye and exit |
 
@@ -154,6 +172,8 @@ app.js             chat UI, voice, commands, settings, wake word, reminders
 brain.js           her brain & memory (pure JavaScript, localStorage)
 pool.js            pool chemistry math (pure, unit-tested)
 tools.js           reminders & service jobs (pure, unit-tested)
+journal.js         her daily-journal logic (pure, unit-tested)
+weather.js         Open-Meteo forecast → pool tips (pure, unit-tested)
 style.css          the look
 package.json       app metadata + build config (electron-builder)
 icons/             app icons (including Windows .ico)
@@ -163,10 +183,10 @@ tests/             self-tests (run: node tests/smoke.js, tests/*.test.js)
 
 ## Roadmap ideas
 
-- Code-sign the installer so SmartScreen stays quiet
-- Wake word ("Hey Aqua") for hands-free start
-- Reminders and timers ("remind me at 3pm")
-- Letting her run small PC tasks (open apps, check the weather)
+- Add a real code-signing certificate so SmartScreen stays fully quiet (the
+  build already signs automatically when you add `CSC_LINK` / `CSC_KEY_PASSWORD`
+  as GitHub secrets)
+- Letting her run small PC tasks (open apps, send the day's journal somewhere)
 - More question packs and personality tuning
 
 ---

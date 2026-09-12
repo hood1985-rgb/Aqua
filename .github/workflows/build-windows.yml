@@ -28,6 +28,10 @@ jobs:
         run: npm run dist
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Code-signing activates automatically when a certificate is provided
+          # as a repository secret. Leave these unset to build unsigned.
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
 
       - name: Upload the installer & portable exe
         uses: actions/upload-artifact@v4
