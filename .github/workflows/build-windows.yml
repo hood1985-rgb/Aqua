@@ -24,14 +24,24 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # Code signing activates only when a CSC_LINK certificate secret exists.
+      # Skipped otherwise, so unsigned builds keep working exactly as before.
+      - name: Configure code signing (optional)
+        if: ${{ secrets.CSC_LINK != '' }}
+        shell: bash
+        env:
+          CSC_CERT: ${{ secrets.CSC_LINK }}
+          CSC_PASS: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          printf 'CSC_LINK<<__CERT__\n%s\n__CERT__\n' "$CSC_CERT" >> "$GITHUB_ENV"
+          if [ -n "$CSC_PASS" ]; then
+            printf 'CSC_KEY_PASSWORD<<__PASS__\n%s\n__PASS__\n' "$CSC_PASS" >> "$GITHUB_ENV"
+          fi
+
       - name: Build Windows installer
         run: npm run dist
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Code-signing activates automatically when a certificate is provided
-          # as a repository secret. Leave these unset to build unsigned.
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
 
       - name: Upload the installer & portable exe
         uses: actions/upload-artifact@v4
