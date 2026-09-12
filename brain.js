@@ -567,9 +567,9 @@ class Brain {
               "But enough about me — how's your day going?");
     }
     if (/\bwhat can you do\b|\bwhat do you do\b|\bwhat are you for\b/.test(low)) {
-      return ("Right now? I chat, I listen, and I remember what you tell me, so I get to know you " +
-              "better every time we talk. Type /help to see all my tricks, or open the 🧠 panel to peek at " +
-              "what I've learned about you.");
+      return ("I chat, I listen, I remember what you tell me — and I keep Hood's Pool Service in line. " +
+              "Give me your pool gallons and I'll do the chlorine and pH math, log your service jobs, " +
+              "and set reminders so nothin' slips. Type /help for the full list, or tap the 🧰 panel.");
     }
     if (/\b(do you remember (me|anything|what)|what do you know about me|do you know me)\b/.test(low)) {
       return this._recite();

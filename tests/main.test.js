@@ -43,7 +43,7 @@ Module._load = function (request, parent, isMain) {
   return origLoad.apply(this, arguments);
 };
 
-require("../main.js");
+const mainExports = require("../main.js");
 
 async function main() {
   await new Promise((r) => setImmediate(r)); // let whenReady().then register handlers
@@ -93,6 +93,17 @@ async function main() {
   const cfg2 = await handlers["config:get"]();
   if (cfg2.hasKey) throw new Error("key still present after clear");
   console.log("[ok] key cleared");
+
+  // 5) SSE streaming parser
+  const { extractDeltaFromSSELine } = mainExports;
+  if (extractDeltaFromSSELine('data: {"choices":[{"delta":{"content":"Hi"}}]}') !== "Hi") {
+    throw new Error("SSE content delta not extracted");
+  }
+  if (extractDeltaFromSSELine("data: [DONE]") !== null) throw new Error("[DONE] should be null");
+  if (extractDeltaFromSSELine("") !== null) throw new Error("empty line should be null");
+  if (extractDeltaFromSSELine("event: ping") !== null) throw new Error("non-data line should be null");
+  if (extractDeltaFromSSELine('data: {"choices":[{"delta":{}}]}') !== null) throw new Error("empty delta should be null");
+  console.log("[ok] SSE streaming parser");
 
   console.log("\nALL CHECKS PASSED - main process logic is sound.");
 }

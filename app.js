@@ -19,6 +19,31 @@ function escapeHtml(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+function msText(ms) {
+  ms = Math.max(0, Math.round(ms / 1000) * 1000);
+  const min = Math.round(ms / 60000);
+  if (min < 1) return "a moment";
+  if (min < 60) return `about ${min} minute${min === 1 ? "" : "s"}`;
+  const hr = Math.floor(min / 60);
+  const rem = min % 60;
+  if (!rem) return `about ${hr} hour${hr === 1 ? "" : "s"}`;
+  return `about ${hr}h ${rem}m`;
+}
+
+function whenText(at) {
+  const d = new Date(at);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  const hh = d.getHours();
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ap = hh >= 12 ? "pm" : "am";
+  const hr12 = hh % 12 === 0 ? 12 : hh % 12;
+  const time = `${hr12}:${mm}${ap}`;
+  if (sameDay) return `today at ${time}`;
+  if (d.toDateString() === new Date(now.getTime() + 86400000).toDateString()) return `tomorrow at ${time}`;
+  return `${d.toLocaleDateString()} at ${time}`;
+}
+
 /* ---------------- the Electron bridge (absent when opened in a plain browser) ---------------- */
 const bridge = window.aqua || null;
 
@@ -210,6 +235,9 @@ function setupVoices() {
 let busy = false;
 let recording = false;
 let handsfreeOn = false;
+let wakeOn = false;
+let wakeRec = null;
+let wakeBusy = false;
 
 const chatScroll = $("chat-scroll");
 const input = $("input");
@@ -320,20 +348,28 @@ async function handleUserText(text) {
 
   try {
     if (text.startsWith("/")) {
+      hideTyping();
       const r = handleCommand(text);
       reply = r.reply;
       action = r.action;
       if (r.voice_on !== undefined) setVoiceUI(r.voice_on);
+      if (reply) addMessage("aqua", reply);
     } else if (brain.isExit(text)) {
+      hideTyping();
       reply = brain.farewell();
       mem.addExchange(text, reply);
       mem.save();
       Speaker.say(reply);
+      addMessage("aqua", reply);
       action = "quit";
     } else if (smart.on && bridge) {
       brain.learnFrom(text);  // she still learns, even with an OpenAI brain
       try {
-        reply = await smartReply(text);
+        hideTyping();
+        reply = await streamSmartReply(text);
+        mem.addExchange(text, reply);
+        mem.save();
+        Speaker.say(reply);
       } catch (e) {
         if (String(e && e.message).includes("no-key")) {
           smart.on = false;
@@ -341,34 +377,63 @@ async function handleUserText(text) {
         }
         toast("OpenAI hiccup — I'll use my built-in brain this once.");
         reply = brain.respond(text);
+        mem.addExchange(text, reply);
+        mem.save();
+        Speaker.say(reply);
+        addMessage("aqua", reply);
       }
-      mem.addExchange(text, reply);
-      mem.save();
-      Speaker.say(reply);
     } else {
+      hideTyping();
       reply = brain.respond(text);
       mem.addExchange(text, reply);
       mem.save();
       Speaker.say(reply);
+      addMessage("aqua", reply);
     }
   } catch (e) {
     console.error(e);
+    hideTyping();
     reply = "Hmm, I had a little hiccup thinking about that. Try again?";
+    addMessage("aqua", reply);
   }
 
-  hideTyping();
-  if (reply) addMessage("aqua", reply);
   if (action) handleAction(action);
   busy = false;
   setSendDisabled(false);
 }
 
-async function smartReply(text) {
-  const messages = [{ role: "system", content: brain.systemPrompt() }]
-    .concat(mem.historyForLLM())
-    .concat([{ role: "user", content: text }]);
-  const res = await bridge.chat({ messages, model: smart.model });
-  return res.reply;
+/* Stream her OpenAI reply word-by-word into a live bubble. */
+function streamSmartReply(text) {
+  return new Promise((resolve, reject) => {
+    const messages = [{ role: "system", content: brain.systemPrompt() }]
+      .concat(mem.historyForLLM())
+      .concat([{ role: "user", content: text }]);
+
+    const bubble = addMessage("aqua", "");
+    let acc = "";
+    let off = null;
+    if (bridge.onChatChunk) {
+      off = bridge.onChatChunk((delta) => {
+        acc += delta;
+        bubble.textContent = acc;
+        scrollToBottom();
+      });
+    }
+
+    bridge.chat({ messages, model: smart.model, stream: true })
+      .then((res) => {
+        if (off) off();
+        const final = (res && res.reply) ? res.reply : acc;
+        bubble.textContent = final || "Hmm, my brain came back empty. Try me again?";
+        scrollToBottom();
+        resolve(final || "");
+      })
+      .catch((err) => {
+        if (off) off();
+        if (bubble.parentNode) bubble.remove();
+        reject(err);
+      });
+  });
 }
 
 function handleAction(action) {
@@ -377,7 +442,11 @@ function handleAction(action) {
     case "show_voices": openPanel("voices"); break;
     case "show_help": openPanel("help"); break;
     case "show_settings": openPanel("settings"); break;
+    case "show_pool": openPanel("pool"); break;
     case "toggle_handsfree": setHandsfree(!handsfreeOn); break;
+    case "toggle_wake": setWake(!wakeOn); break;
+    case "do_backup": exportMemory(); break;
+    case "do_restore": restoreMemory(); break;
     case "reset_confirm": openResetModal(); break;
     case "quit":
       setTimeout(() => quitScreen(), 900);
@@ -391,11 +460,19 @@ const HELP_TEXT = `Commands you can type anytime:
   /profile         see everything Aqua has learned about you
   /voice on|off    turn her voice on or off
   /voices          list the voices she can wear
-  /voice <name>    switch voice (e.g.  /voice Aria )
+  /voice <name>    switch voice (e.g.  /voice nova )
   /rate +10%       speak faster (+) or slower (-)
   /handsfree       toggle always-listening mode
+  /wakeword        toggle the "Hey Aqua" wake word
   /name <name>     tell her your name
   /forget <word>   forget memories containing that word
+  /pool            your pool setup (gallons & chlorine type)
+  /pool set <gal>  e.g.  /pool set 15000
+  /chem ph 8.2 7.5 chemistry math for a test
+  /job add <text>  log a service job, /jobs to list, /job done <n>
+  /remind in 20 min to check pH    set a reminder
+  /timer 5         a quick timer (minutes)
+  /reminders       list what's coming up
   /brain           which brain she's thinking with
   /settings        connect her OpenAI brain (API key)
   /reset           wipe everything she knows (asks first)
@@ -404,6 +481,7 @@ const HELP_TEXT = `Commands you can type anytime:
 Tips:
   * Press Enter to send, Shift+Enter for a new line.
   * Tap the microphone to talk, or the headphones for hands-free.
+  * Say "Hey Aqua" when the wake word is on.
   * Everything she learns stays on your PC.`;
 
 function handleCommand(line) {
@@ -524,6 +602,131 @@ function handleCommand(line) {
         : "Built-in local brain. Open Settings (⚙️) to connect my OpenAI brain with your API key.";
       break;
 
+    case "/pool": {
+      if (rest.toLowerCase().startsWith("set")) {
+        const gal = parseInt(rest.replace(/^set\s*/i, "").replace(/[^\d]/g, ""), 10);
+        if (!gal || gal <= 0) { out.reply = "Usage: /pool set 15000"; break; }
+        mem.data.pool = mem.data.pool || Object.assign({}, Pool.DEFAULT_POOL);
+        mem.data.pool.gallons = gal;
+        mem.save();
+        out.reply = `Pool set to ${gal.toLocaleString("en-US")} gallons. Now ask me for chemistry — /chem ph 8.2 7.5.`;
+      } else if (rest.toLowerCase().startsWith("chlorine")) {
+        const ct = rest.replace(/^chlorine\s*/i, "").trim().toLowerCase();
+        const match = Pool.chlorineTypes.find(([id]) => ct === id || id.includes(ct) || ct.includes(id));
+        mem.data.pool = mem.data.pool || Object.assign({}, Pool.DEFAULT_POOL);
+        if (match) {
+          mem.data.pool.chlorineType = match[0];
+          mem.save();
+          out.reply = `Chlorine source set to ${match[1]}.`;
+        } else {
+          out.reply = `Pick one: ${Pool.chlorineTypes.map(([id, l]) => l).join(", ")}.`;
+        }
+      } else {
+        const pool = mem.data.pool || {};
+        if (!pool.gallons) {
+          out.reply = "No pool on file yet — /pool set 15000 to tell me the gallons.";
+        } else {
+          const ct = Pool.chlorineTypes.find(([id]) => id === pool.chlorineType) || [];
+          out.reply = `Pool on file: ${pool.gallons.toLocaleString("en-US")} gallons, chlorine source ${ct[1] || pool.chlorineType}. Ready for chemistry — /chem ph 8.2 7.5.`;
+        }
+        out.action = "show_pool";
+      }
+      break;
+    }
+
+    case "/chem": {
+      const parts = rest.split(/\s+/);
+      const param = Pool.parseParam(parts[0]);
+      if (!param) { out.reply = "Tell me the test: /chem ph 8.2 7.5 (I know fc, ph, ta, ch, cya, salt)."; break; }
+      const spec = Pool.CHEM[param];
+      const current = parseFloat(parts[1]);
+      const target = parts[2] != null ? parseFloat(parts[2]) : spec.defaultTarget;
+      if (!isFinite(current)) { out.reply = `Give me the reading, darlin' — /chem ${param} ${spec.min} ${spec.defaultTarget}`; break; }
+      const pool = mem.data.pool || {};
+      const res = Pool.recommendDose(param, current, target, pool.gallons, pool.chlorineType);
+      out.reply = res.summary || res.error || "Hmm, I couldn't work that one out.";
+      if (res.ok && pool.gallons) out.action = "show_pool";
+      break;
+    }
+
+    case "/job": {
+      mem.data.tasks = mem.data.tasks || [];
+      if (rest.toLowerCase().startsWith("add")) {
+        const text = rest.replace(/^add\s*/i, "").trim();
+        if (!text) { out.reply = "Usage: /job add check the Smiths' filter"; break; }
+        const t = Tasks.add(mem.data.tasks, text);
+        mem.save();
+        out.reply = `Job logged: ${t.text}. That's ${Tasks.open(mem.data.tasks).length} open.`;
+      } else if (rest.toLowerCase().startsWith("done")) {
+        const n = parseInt(rest.replace(/^done\s*/i, "").replace(/[^\d]/g, ""), 10);
+        const open = Tasks.open(mem.data.tasks);
+        const t = open[n - 1];
+        if (t) { Tasks.toggle(mem.data.tasks, t.id); mem.save(); out.reply = `Marked done: ${t.text}. Good work.`; }
+        else { out.reply = "No such job — /jobs to see the list."; }
+      } else if (rest.toLowerCase().startsWith("del") || rest.toLowerCase().startsWith("remove")) {
+        const n = parseInt(rest.replace(/^(del|remove)\s*/i, "").replace(/[^\d]/g, ""), 10);
+        const open = Tasks.open(mem.data.tasks);
+        const t = open[n - 1];
+        if (t) { Tasks.remove(mem.data.tasks, t.id); mem.save(); out.reply = `Removed: ${t.text}.`; }
+        else { out.reply = "No such job — /jobs to see the list."; }
+      } else {
+        out.reply = "Usage: /job add <text>, /jobs, /job done <n>";
+      }
+      break;
+    }
+
+    case "/jobs": {
+      const open = Tasks.open(mem.data.tasks || []);
+      if (!open.length) { out.reply = "No open jobs, boss. Nice and quiet for once."; break; }
+      const list = open.map((t, i) => `${i + 1}. ${t.text}`).join("\n");
+      out.reply = `Open jobs (${open.length}):\n${list}`;
+      out.action = "show_pool";
+      break;
+    }
+
+    case "/remind": {
+      const parsed = Tools.parseReminder(rest);
+      if (!parsed) { out.reply = "I couldn't parse that. Try /remind in 20 minutes to check pH, or /remind at 15:30 check pH."; break; }
+      mem.data.reminders = mem.data.reminders || [];
+      const r = Reminders.add(mem.data.reminders, parsed);
+      mem.save();
+      out.reply = `You got it — I'll remind you to ${r.message} ${whenText(r.at)}.`;
+      break;
+    }
+
+    case "/timer": {
+      const parsed = Tools.parseReminder("timer " + rest);
+      if (!parsed) { out.reply = "Try /timer 5 for five minutes."; break; }
+      mem.data.reminders = mem.data.reminders || [];
+      const r = Reminders.add(mem.data.reminders, parsed);
+      mem.save();
+      out.reply = `Timer set — I'll holler in ${msText(r.at - Date.now())}.`;
+      break;
+    }
+
+    case "/reminders": {
+      const pending = Reminders.pending(mem.data.reminders || []);
+      if (!pending.length) { out.reply = "Nothing on the books, boss."; break; }
+      const list = pending.map((r) => `• ${r.message} — ${whenText(r.at)}`).join("\n");
+      out.reply = `Coming up:\n${list}`;
+      break;
+    }
+
+    case "/wakeword":
+      out.reply = "Wake word toggled.";
+      out.action = "toggle_wake";
+      break;
+
+    case "/backup":
+      out.reply = "Exporting her memory…";
+      out.action = "do_backup";
+      break;
+
+    case "/restore":
+      out.reply = "Pick a memory backup to load.";
+      out.action = "do_restore";
+      break;
+
     case "/settings":
       out.reply = "Settings are open — you can connect my OpenAI brain there.";
       out.action = "show_settings";
@@ -587,6 +790,7 @@ async function recordOnce() {
 
   const mimeType = micMimeType();
   const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+  micRecorder = rec;
   micChunks = [];
   rec.ondataavailable = (e) => { if (e.data && e.data.size) micChunks.push(e.data); };
 
@@ -604,6 +808,7 @@ async function recordOnce() {
   await stopped;
 
   recording = false;
+  micRecorder = null;
   clearTimeout(micTimer);
   btnMic.classList.remove("listening");
   btnMic.title = "Talk with your voice";
@@ -659,10 +864,99 @@ function setHandsfree(on) {
   handsfreeOn = on;
   btnHandsfree.classList.toggle("active", on);
   btnHandsfree.title = on ? "Hands-free listening is ON (say 'stop listening')" : "Hands-free listening";
-  if (!on) return;
-  if (!bridge) { toast("Open Aqua as the desktop app to use hands-free."); handsfreeOn = false; btnHandsfree.classList.remove("active"); return; }
-  toast("Hands-free on — just talk. Say “stop listening” to pause.");
-  handsfreeLoop();
+  if (on) {
+    if (wakeOn) setWake(false);
+    if (!bridge) { toast("Open Aqua as the desktop app to use hands-free."); handsfreeOn = false; btnHandsfree.classList.remove("active"); return; }
+    toast("Hands-free on — just talk. Say “stop listening” to pause.");
+    handsfreeLoop();
+  }
+}
+
+/* ---------------- wake word ("Hey Aqua") ---------------- */
+function wakeWordAvailable() {
+  return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+
+function setWake(on) {
+  wakeOn = on;
+  if (!on) {
+    if (wakeRec) { try { wakeRec.abort(); } catch (e) {} wakeRec = null; }
+    return;
+  }
+  if (handsfreeOn) setHandsfree(false);
+  if (!wakeWordAvailable()) {
+    toast("Wake word isn't supported here — use hands-free instead.");
+    wakeOn = false;
+    return;
+  }
+  toast("Wake word on — say “Hey Aqua” anytime.");
+  startWakeLoop();
+}
+
+function startWakeLoop() {
+  if (!wakeOn) return;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec;
+  try {
+    rec = new SR();
+  } catch (e) {
+    toast("Wake word couldn't start.");
+    setWake(false);
+    return;
+  }
+  wakeRec = rec;
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.lang = "en-US";
+
+  rec.onresult = (e) => {
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = (e.results[i][0].transcript || "").toLowerCase().trim();
+      if (/\bhey aqua\b/.test(t) || /^aqua\b/.test(t)) {
+        wakeRec = null;                    // so onend doesn't auto-restart
+        try { rec.stop(); } catch (err) {}
+        handleWakeTrigger();
+        return;
+      }
+    }
+  };
+
+  rec.onerror = (e) => {
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+      toast("Mic blocked for the wake word.");
+      setWake(false);
+    } else if (e.error === "network") {
+      toast("Wake word needs an internet connection.");
+      setWake(false);
+    }
+  };
+
+  rec.onend = () => {
+    if (wakeOn && wakeRec === rec) {
+      wakeRec = null;
+      setTimeout(startWakeLoop, 400);
+    }
+  };
+
+  try { rec.start(); } catch (e) { toast("Wake word couldn't start."); setWake(false); }
+}
+
+async function handleWakeTrigger() {
+  if (wakeBusy || busy) { if (wakeOn) startWakeLoop(); return; }
+  wakeBusy = true;
+  toast("Yes, boss?");
+  const res = await recordOnce();
+  if (res && res.text) {
+    const low = res.text.toLowerCase().replace(/[.,!?]/g, "").trim();
+    if (["stop listening", "stop wake word", "wake word off", "stop wake"].includes(low)) {
+      setWake(false);
+      toast("Wake word off.");
+    } else {
+      await handleUserText(res.text);
+    }
+  }
+  wakeBusy = false;
+  if (wakeOn) startWakeLoop();
 }
 
 async function handsfreeLoop() {
@@ -720,6 +1014,75 @@ async function refreshSmart() {
   updateBrainStatus();
 }
 
+/* ---------------- reminders & notifications ---------------- */
+function checkReminders() {
+  const list = mem.data.reminders || [];
+  const due = Reminders.due(list, Date.now());
+  for (const r of due) {
+    r.fired = true;
+    const msg = r.message || "Reminder";
+    addMessage("aqua", `⏰ ${msg}`);
+    Speaker.say(msg);
+    toast(`⏰ ${msg}`, 6000);
+    if ("Notification" in window && Notification.permission === "granted") {
+      try { new Notification("Aqua", { body: msg }); } catch (e) {}
+    }
+  }
+  if (due.length) mem.save();
+}
+
+function exportMemory() {
+  try {
+    const blob = new Blob([JSON.stringify(mem.data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "aqua-memory.json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    toast("Memory exported to aqua-memory.json");
+  } catch (e) {
+    console.error(e);
+    toast("Couldn't export.");
+  }
+}
+
+function restoreMemory() {
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = "application/json,.json";
+  fileInput.onchange = () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.facts)) {
+          toast("That's not a valid Aqua memory file.");
+          return;
+        }
+        mem.data = parsed;
+        for (const k of ["facts", "asked_questions", "qa", "recent_exchanges"]) {
+          if (!Array.isArray(mem.data[k])) mem.data[k] = [];
+        }
+        mem.save();
+        brain = new Brain(mem);
+        chatScroll.innerHTML = "";
+        addMessage("aqua", brain.greeting());
+        toast("Memory restored — she remembers again.");
+      } catch (e) {
+        console.error(e);
+        toast("Couldn't read that file.");
+      }
+    };
+    reader.readAsText(file);
+  };
+  fileInput.click();
+}
+
 /* ---------------- panels ---------------- */
 const overlay = $("overlay");
 const panel = $("panel");
@@ -731,6 +1094,7 @@ function openPanel(which) {
   else if (which === "voices") renderVoices();
   else if (which === "help") renderHelp();
   else if (which === "settings") renderSettings();
+  else if (which === "pool") renderPool();
   else return;
   panel.classList.remove("hidden");
   panel.classList.add("open");
@@ -749,6 +1113,7 @@ $("btn-profile").addEventListener("click", () => openPanel("profile"));
 $("btn-voices").addEventListener("click", () => openPanel("voices"));
 $("btn-help").addEventListener("click", () => openPanel("help"));
 $("btn-settings").addEventListener("click", () => openPanel("settings"));
+$("btn-pool").addEventListener("click", () => openPanel("pool"));
 
 const KIND_LABEL = {
   favorite: "Favorites", like: "Likes", dislike: "Dislikes", work: "Work",
@@ -791,6 +1156,14 @@ function renderProfile() {
         <button id="forget-btn" class="btn-ghost">Forget</button>
       </div>
       <p class="hint" style="margin-top:10px;">Deletes every memory containing that word.</p>
+    </div>
+    <div class="panel-section">
+      <h3>Backup &amp; restore</h3>
+      <div style="display:flex;gap:8px;">
+        <button id="backup-btn" class="btn-solid">Export memory</button>
+        <button id="restore-btn" class="btn-ghost">Restore</button>
+      </div>
+      <p class="hint" style="margin-top:10px;">Save everything she knows to a file, or load a backup. Handy before a new PC.</p>
     </div>`;
 
   panelBody.innerHTML = html;
@@ -802,6 +1175,8 @@ function renderProfile() {
     toast(`Forgot ${removed.length} memor${removed.length === 1 ? "y" : "ies"}.`);
     renderProfile();
   });
+  $("backup-btn").addEventListener("click", exportMemory);
+  $("restore-btn").addEventListener("click", restoreMemory);
 }
 
 function rateText(rate) {
@@ -934,13 +1309,20 @@ function renderHelp() {
     ["/profile", "everything she's learned about you"],
     ["/voice on|off", "turn her voice on or off"],
     ["/voices", "list the voices she can wear"],
-    ["/voice &lt;name&gt;", "switch voice (e.g. /voice Aria)"],
+    ["/voice &lt;name&gt;", "switch voice (e.g. /voice nova)"],
     ["/rate +10%", "speak faster (+) or slower (-)"],
     ["/handsfree", "always-listening mode"],
+    ["/wakeword", "toggle the “Hey Aqua” wake word"],
     ["/name Robert", "tell her your name"],
     ["/forget word", "forget memories with that word"],
+    ["/pool set 15000", "your pool size"],
+    ["/chem ph 8.2 7.5", "pool chemistry math"],
+    ["/job add …", "log a service job (/jobs, /job done 1)"],
+    ["/remind in 20 min …", "set a reminder"],
+    ["/timer 5", "a quick timer"],
     ["/brain", "which brain she's using"],
     ["/settings", "connect her OpenAI brain"],
+    ["/backup", "export her memory to a file"],
     ["/reset", "wipe everything (asks first)"],
     ["/quit", "say goodbye and close"],
   ];
@@ -1025,6 +1407,121 @@ async function renderSettings() {
   });
 }
 
+function renderPool() {
+  panelTitle.textContent = "Hood's Pool Service";
+  const pool = mem.data.pool || Object.assign({}, Pool.DEFAULT_POOL);
+  const open = Tasks.open(mem.data.tasks || []);
+  const done = Tasks.done(mem.data.tasks || []);
+
+  let html = `
+    <div class="panel-section">
+      <h3>Pool on file</h3>
+      <div class="kv"><span class="k">Gallons</span><span class="v">${pool.gallons ? pool.gallons.toLocaleString("en-US") : "not set"}</span></div>
+      <div class="kv"><span class="k">Chlorine</span><span class="v">${escapeHtml((Pool.chlorineTypes.find(([id]) => id === pool.chlorineType) || ["", "—"])[1])}</span></div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <input id="pool-gallons" type="number" class="field-input" placeholder="e.g. 15000" value="${pool.gallons || ""}">
+        <button id="pool-save" class="btn-solid">Save</button>
+      </div>
+      <div class="chip-row" style="margin-top:10px;">
+        ${Pool.chlorineTypes.map(([id, label]) =>
+          `<button class="chip ${id === pool.chlorineType ? "current" : ""}" data-ct="${id}">${escapeHtml(label)}</button>`).join("")}
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <h3>Chemistry quick math</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <select id="chem-param" class="field-input" style="flex:1;min-width:120px;">
+          ${Object.entries(Pool.CHEM).map(([k, s]) => `<option value="${k}">${escapeHtml(s.name)}</option>`).join("")}
+        </select>
+        <input id="chem-current" type="number" step="0.1" class="field-input" style="flex:1;min-width:90px;" placeholder="now">
+        <input id="chem-target" type="number" step="0.1" class="field-input" style="flex:1;min-width:90px;" placeholder="target">
+        <button id="chem-calc" class="btn-solid">Go</button>
+      </div>
+      <div id="chem-result" class="hint" style="margin-top:10px;"></div>
+    </div>
+
+    <div class="panel-section">
+      <h3>Service jobs (${open.length} open)</h3>
+      <div style="display:flex;gap:8px;">
+        <input id="job-input" class="field-input" placeholder="e.g. check the Smiths' filter">
+        <button id="job-add" class="btn-solid">Add</button>
+      </div>
+      <div id="job-list" style="margin-top:12px;"></div>
+    </div>`;
+
+  panelBody.innerHTML = html;
+
+  // pool profile
+  $("pool-save").addEventListener("click", () => {
+    const g = parseInt($("pool-gallons").value, 10);
+    if (!g || g <= 0) { toast("Give me a real gallon count, darlin'."); return; }
+    mem.data.pool = mem.data.pool || Object.assign({}, Pool.DEFAULT_POOL);
+    mem.data.pool.gallons = g;
+    mem.save();
+    toast("Pool saved.");
+    renderPool();
+  });
+  panelBody.querySelectorAll("[data-ct]").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      mem.data.pool = mem.data.pool || Object.assign({}, Pool.DEFAULT_POOL);
+      mem.data.pool.chlorineType = chip.dataset.ct;
+      mem.save();
+      renderPool();
+    });
+  });
+
+  // chemistry
+  $("chem-calc").addEventListener("click", () => {
+    const param = $("chem-param").value;
+    const current = parseFloat($("chem-current").value);
+    const target = parseFloat($("chem-target").value);
+    const spec = Pool.CHEM[param];
+    const t = isFinite(target) ? target : spec.defaultTarget;
+    if (!isFinite(current)) { toast("Enter the current reading first."); return; }
+    const res = Pool.recommendDose(param, current, t, pool.gallons, pool.chlorineType);
+    $("chem-result").textContent = res.summary || res.error || "";
+    if (res.ok && !res.inRange) Speaker.say(res.summary);
+  });
+
+  // jobs
+  const renderJobs = () => {
+    const list = $("job-list");
+    const jobs = Tasks.open(mem.data.tasks || []);
+    if (!jobs.length) {
+      list.innerHTML = '<div class="hint">No open jobs.</div>';
+      return;
+    }
+    list.innerHTML = jobs.map((t, i) => `
+      <div class="job-row">
+        <span class="job-num">${i + 1}</span>
+        <span class="job-text">${escapeHtml(t.text)}</span>
+        <button class="mini-btn job-done" data-id="${t.id}" title="Done">✓</button>
+        <button class="mini-btn job-del" data-id="${t.id}" title="Remove">✕</button>
+      </div>`).join("");
+    list.querySelectorAll(".job-done").forEach((b) => b.addEventListener("click", () => {
+      Tasks.toggle(mem.data.tasks, b.dataset.id);
+      mem.save();
+      renderPool();
+    }));
+    list.querySelectorAll(".job-del").forEach((b) => b.addEventListener("click", () => {
+      Tasks.remove(mem.data.tasks, b.dataset.id);
+      mem.save();
+      renderPool();
+    }));
+  };
+  $("job-add").addEventListener("click", () => {
+    const text = $("job-input").value.trim();
+    if (!text) return;
+    mem.data.tasks = mem.data.tasks || [];
+    Tasks.add(mem.data.tasks, text);
+    mem.save();
+    $("job-input").value = "";
+    renderPool();
+  });
+  renderJobs();
+}
+
 /* ---------------- reset + quit ---------------- */
 const modal = $("modal");
 $("btn-reset").addEventListener("click", openResetModal);
@@ -1069,6 +1566,10 @@ async function boot() {
   mem.save();
   brain = new Brain(mem);
 
+  mem.data.pool = mem.data.pool || Object.assign({}, Pool.DEFAULT_POOL);
+  mem.data.tasks = mem.data.tasks || [];
+  mem.data.reminders = mem.data.reminders || [];
+
   setupVoices();
   Speaker.enabled = mem.data.voice_on !== false;
   setVoiceUI(Speaker.enabled);
@@ -1087,9 +1588,20 @@ async function boot() {
     }
   }
 
+  const openJobs = Tasks.open(mem.data.tasks);
+  if (openJobs.length) {
+    addMessage("aqua", `You've got ${openJobs.length} open job${openJobs.length === 1 ? "" : "s"} on the board — tap 🧰 when you're ready to dig in.`);
+  }
+
   if (!smart.on) {
     addMessage("aqua", "Tip: open ⚙️ Settings to connect my OpenAI brain — or just talk to me like this for now.");
   }
+
+  if ("Notification" in window && Notification.permission === "default") {
+    try { Notification.requestPermission().catch(() => {}); } catch (e) {}
+  }
+
+  setInterval(checkReminders, 10000);
 
   setSendDisabled(false);
   input.focus();

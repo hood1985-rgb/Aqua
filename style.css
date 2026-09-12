@@ -493,3 +493,32 @@ html, body {
   font-size: 12px;
 }
 .mini-btn:hover { background: var(--aqua-soft); color: var(--aqua); }
+
+/* ---------- pool service panel ---------- */
+.chip.current { border-color: var(--aqua); background: var(--aqua-soft); color: var(--aqua); }
+
+.job-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  margin-bottom: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.job-num {
+  flex: 0 0 22px;
+  height: 22px;
+  display: grid; place-items: center;
+  border-radius: 6px;
+  background: var(--aqua-soft);
+  color: var(--aqua);
+  font-size: 12px;
+  font-weight: 700;
+}
+.job-text { flex: 1; font-size: 14px; color: var(--ink); }
+.job-done:hover { background: rgba(90, 220, 140, 0.15); color: #5adc8c; }
+.job-del:hover { background: rgba(255, 122, 122, 0.15); color: var(--danger); }
+
+select.field-input option { background: #07233b; color: var(--ink); }

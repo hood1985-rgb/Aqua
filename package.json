@@ -28,6 +28,8 @@
       "index.html",
       "app.js",
       "brain.js",
+      "pool.js",
+      "tools.js",
       "style.css",
       "favicon.svg",
       "icons/**/*"

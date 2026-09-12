@@ -15,5 +15,10 @@ contextBridge.exposeInMainWorld("aqua", {
   chat: (payload) => ipcRenderer.invoke("chat", payload),
   transcribe: (audio, mimeType) => ipcRenderer.invoke("transcribe", { audio, mimeType }),
   speak: (payload) => ipcRenderer.invoke("speak", payload),
+  onChatChunk: (cb) => {
+    const handler = (_event, delta) => cb(delta);
+    ipcRenderer.on("chat:chunk", handler);
+    return () => ipcRenderer.removeListener("chat:chunk", handler);
+  },
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
 });

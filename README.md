@@ -23,14 +23,20 @@ own direct calls to OpenAI.
   window and icon.
 - 🧠 **An OpenAI brain with a real personality** — a southeast-Texas gal with a
   Navy past who now keeps Hood's Pool Service running smooth. Warm, quick-witted,
-  occasionally salty, and genuinely curious about you.
-- 🗣️ **A genuinely human voice** — she speaks with OpenAI's neural text-to-speech
-  (`tts-1-hd`): pick from 10 lifelike voices and preview them in the Voices panel.
-  Falls back to Windows' voice when offline.
-- 💬 **Open conversation** — chat by typing, or tap the mic and just talk.
+  occasionally salty, and genuinely curious about you. She types her replies
+  word-by-word, like a person thinking.
+- 🏊 **She actually works at Hood's Pool Service** — give her your pool gallons
+  and she'll do the chlorine, pH, alkalinity, hardness, stabilizer, and salt
+  math. She logs service jobs and keeps the board tidy.
+- ⏰ **Reminders & timers** — "remind me in 20 minutes to check the pH." She
+  remembers, hollers at you, and can send desktop notifications.
+- 🎙️ **"Hey Aqua" wake word** — hands-free start whenever you want it.
+- 🗣️ **A genuinely human voice** — OpenAI's neural text-to-speech (`tts-1-hd`):
+  pick from 10 lifelike voices and preview them. Falls back to Windows' voice
+  offline.
 - 🎤 **Voice in** — she hears you with **OpenAI Whisper**.
-- 📝 **Real memory** — everything you tell her is saved privately on *your* PC.
-  She still learns your name, facts, and tastes the same way she always has.
+- 📝 **Real memory** — everything you tell her is saved privately on *your* PC,
+  and you can export/restore it to a file.
 - 🔒 **Private by design** — no account, no telemetry. Your API key is stored
   only on your machine and used only to talk to OpenAI directly.
 
@@ -99,10 +105,16 @@ using her built-in local brain, speaking with Windows' built-in voice.
 | `/voices` then `/voice nova` | Browse and switch voices (neural or Windows) |
 | `/rate +10%` or `/rate -10%` | Speak faster or slower |
 | `/handsfree` | Toggle always-listening mode |
+| `/wakeword` | Toggle the "Hey Aqua" wake word |
 | `/name Robert` | Tell her your name directly |
 | `/forget fishing` | Delete any memories matching a word |
+| `/pool set 15000` | Tell her your pool size |
+| `/chem ph 8.2 7.5` | Pool chemistry math (fc, ph, ta, ch, cya, salt) |
+| `/job add …` / `/jobs` / `/job done 1` | Log and manage service jobs |
+| `/remind in 20 min …` / `/timer 5` | Reminders & timers |
 | `/brain` | See which brain she's using |
 | `/settings` | Connect her OpenAI brain |
+| `/backup` | Export her memory to a file |
 | `/reset` | Wipe her memory completely (she'll ask first) |
 | `/quit` | Say goodbye and exit |
 
@@ -138,13 +150,15 @@ brain still drives greetings and memory extraction — she always grows on her o
 main.js            Electron main process — window, key storage, OpenAI calls
 preload.js         secure bridge between the UI and the main process
 index.html         the app window's UI
-app.js             chat UI, voice, commands, settings
+app.js             chat UI, voice, commands, settings, wake word, reminders
 brain.js           her brain & memory (pure JavaScript, localStorage)
+pool.js            pool chemistry math (pure, unit-tested)
+tools.js           reminders & service jobs (pure, unit-tested)
 style.css          the look
 package.json       app metadata + build config (electron-builder)
 icons/             app icons (including Windows .ico)
 .github/workflows/ GitHub Action that builds the Windows installer
-tests/smoke.js     self-test for her brain (run: node tests/smoke.js)
+tests/             self-tests (run: node tests/smoke.js, tests/*.test.js)
 ```
 
 ## Roadmap ideas

@@ -116,6 +116,70 @@ async function chatWithOpenAI(messages, key, model) {
   return String(content || "").trim();
 }
 
+/* Extract one content delta from a Server-Sent Events line.
+   Pure function — exported for unit testing. */
+function extractDeltaFromSSELine(line) {
+  const s = String(line || "").trim();
+  if (!s.startsWith("data:")) return null;
+  const data = s.slice(5).trim();
+  if (!data || data === "[DONE]") return null;
+  try {
+    const j = JSON.parse(data);
+    const d = j.choices && j.choices[0] && j.choices[0].delta;
+    return d && typeof d.content === "string" && d.content ? d.content : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function streamChat(messages, key, model, onDelta) {
+  return new Promise((resolve, reject) => {
+    const payload = Buffer.from(
+      JSON.stringify({ model, messages, temperature: 0.8, stream: true })
+    );
+    const req = https.request(
+      {
+        hostname: "api.openai.com",
+        path: "/v1/chat/completions",
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+          "Content-Length": payload.length,
+        },
+      },
+      (res) => {
+        let buf = "";
+        let full = "";
+        res.on("data", (chunk) => {
+          buf += chunk.toString("utf8");
+          let i;
+          while ((i = buf.indexOf("\n")) !== -1) {
+            const line = buf.slice(0, i);
+            buf = buf.slice(i + 1);
+            const delta = extractDeltaFromSSELine(line);
+            if (delta) {
+              full += delta;
+              try { onDelta(delta); } catch (e) { /* renderer gone */ }
+            }
+          }
+        });
+        res.on("end", () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve({ reply: full.trim() });
+          } else {
+            reject(new Error("HTTP " + res.statusCode));
+          }
+        });
+      }
+    );
+    req.setTimeout(120000, () => req.destroy(new Error("OpenAI request timed out")));
+    req.on("error", reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
 function multipart(fields, file) {
   const boundary = "----aqua" + Date.now().toString(16) + Math.random().toString(16).slice(2);
   const parts = [];
@@ -197,10 +261,17 @@ function registerIpc() {
     return { hasKey: false, model: cfg.model };
   });
 
-  ipcMain.handle("chat", async (event, { messages, model }) => {
+  ipcMain.handle("chat", async (event, { messages, model, stream }) => {
     const cfg = loadConfig();
     if (!cfg.openai_api_key) throw new Error("no-key");
-    const reply = await chatWithOpenAI(messages, cfg.openai_api_key, model || cfg.model);
+    const m = model || cfg.model;
+    if (stream) {
+      const { reply } = await streamChat(messages, cfg.openai_api_key, m, (delta) =>
+        event.sender.send("chat:chunk", delta)
+      );
+      return { reply };
+    }
+    const reply = await chatWithOpenAI(messages, cfg.openai_api_key, m);
     return { reply };
   });
 
@@ -279,3 +350,8 @@ app.whenReady().then(() => {
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
+
+/* Export the SSE parser for unit tests (harmless when run by Electron). */
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { extractDeltaFromSSELine };
+}
