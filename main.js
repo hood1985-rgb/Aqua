@@ -15,6 +15,7 @@ const { app, BrowserWindow, ipcMain, session, shell } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const https = require("https");
+const os = require("os");
 
 const DEFAULT_MODEL = "gpt-4o-mini";
 
@@ -58,6 +59,7 @@ function loadConfig() {
     const data = JSON.parse(fs.readFileSync(keysPath(), "utf8"));
     if (data.openai_api_key) cfg.openai_api_key = data.openai_api_key;
     if (data.model) cfg.model = data.model;
+    if (data.sync_pin) cfg.sync_pin = String(data.sync_pin);
   } catch (e) {
     /* no keys file yet — that's fine */
   }
@@ -74,6 +76,122 @@ function maskKey(key) {
   if (!key) return "";
   const s = String(key);
   return s.length <= 6 ? "…" : "…" + s.slice(-4);
+}
+
+/* ---------------- pool photos (before/after log) ---------------- */
+
+/* Data URLs bigger than this get rejected (~150 KB files after base64). */
+const PHOTO_LIMIT = 200 * 1024;
+
+function photosDir() {
+  return path.join(app.getPath("userData"), "photos");
+}
+
+/* Keep filenames boring: lowercase alnum, dash, underscore, dot. No
+   slashes ever, so callers can't escape the photos folder.
+   Pure function — exported for unit testing. */
+function sanitizePhotoName(name) {
+  const clean = String(name || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (!clean || clean === "." || clean === "..") return "photo.jpg";
+  return clean.slice(0, 80);
+}
+
+function savePhotoFile(customer, label, dataUrl) {
+  const m = /^data:image\/(png|jpe?g|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ""));
+  if (!m) throw new Error("bad-photo");
+  if (m[2].length > PHOTO_LIMIT) throw new Error("photo-too-big");
+  const dir = photosDir();
+  fs.mkdirSync(dir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const file = sanitizePhotoName(
+    (customer || "pool") + "-" + (label || "photo") + "-" + stamp + "-" +
+    Math.floor(Math.random() * 1e6) + ".jpg"
+  );
+  fs.writeFileSync(path.join(dir, file), Buffer.from(m[2], "base64"));
+  return file;
+}
+
+function listPhotoFiles() {
+  try {
+    return fs.readdirSync(photosDir()).filter((f) => /\.(jpe?g|png|webp)$/i.test(f));
+  } catch (e) {
+    return [];
+  }
+}
+
+/* ---------------- phone sync (same-WiFi truck companion) ---------------- */
+
+const SYNC_PORT = 8138;
+let syncServer = null;
+let syncSnapshot = { tasks: [], route: [], routeDone: [], customers: [] };
+let syncInbox = [];
+let syncPin = null;
+
+/* The PIN lives in keys.json next to the API key — generated once, then
+   reused every launch so the phone stays paired. */
+function getSyncPin() {
+  if (syncPin) return syncPin;
+  try {
+    const data = JSON.parse(fs.readFileSync(keysPath(), "utf8"));
+    if (data.sync_pin) {
+      syncPin = String(data.sync_pin);
+      return syncPin;
+    }
+  } catch (e) { /* no keys file yet */ }
+  const { makePin } = require("./phone-sync.js");
+  syncPin = makePin();
+  try {
+    let cfg = {};
+    try { cfg = JSON.parse(fs.readFileSync(keysPath(), "utf8")); } catch (e2) { /* fresh file */ }
+    cfg.sync_pin = syncPin;
+    writeConfig(cfg);
+  } catch (e) { /* PIN still works for this run */ }
+  return syncPin;
+}
+
+/* http://<this-pc>:8138 links for every LAN adapter, for the Truck view. */
+function lanUrls(port) {
+  const nets = os.networkInterfaces ? os.networkInterfaces() : {};
+  const urls = [];
+  for (const list of Object.values(nets)) {
+    for (const nic of list || []) {
+      if (nic.family === "IPv4" && !nic.internal) urls.push("http://" + nic.address + ":" + port);
+    }
+  }
+  return urls;
+}
+
+/* Lazy on purpose: binding a port at require-time would break unit tests,
+   so the server only starts the first time the renderer asks for sync. */
+function ensureSyncServer() {
+  if (syncServer) return syncServer;
+  const { createSyncServer } = require("./phone-sync.js");
+  let page = "";
+  try {
+    page = fs.readFileSync(path.join(__dirname, "phone.html"), "utf8");
+  } catch (e) {
+    page = "<html><body>Aqua phone sync is running.</body></html>";
+  }
+  syncServer = createSyncServer({
+    page,
+    pin: getSyncPin(),
+    getSnapshot: () => syncSnapshot,
+    onOp: (op) => {
+      syncInbox.push(op);
+      return { queued: true };
+    },
+  });
+  // A taken port shouldn't crash the app (or a test run): sync just won't start.
+  syncServer.on("error", () => {});
+  syncServer.listen(SYNC_PORT, "0.0.0.0");
+  // Don't pin the process open: Electron stays alive anyway, and unit
+  // tests that poke sync:push should still be able to exit cleanly.
+  if (typeof syncServer.unref === "function") syncServer.unref();
+  return syncServer;
 }
 
 /* ---------------- tiny HTTPS JSON client ---------------- */
@@ -413,6 +531,43 @@ function registerIpc() {
     if (typeof url === "string" && /^https?:\/\//.test(url)) shell.openExternal(url);
     return true;
   });
+
+  ipcMain.handle("photo:save", (event, { customer, label, dataUrl }) => {
+    return { file: savePhotoFile(customer, label, dataUrl) };
+  });
+
+  ipcMain.handle("photo:get", (event, file) => {
+    const safe = sanitizePhotoName(file);
+    if (!/\.(jpe?g|png|webp)$/i.test(safe)) throw new Error("bad-photo");
+    const buf = fs.readFileSync(path.join(photosDir(), safe));
+    const lower = safe.toLowerCase();
+    const ext = lower.endsWith(".png") ? "png" : lower.endsWith(".webp") ? "webp" : "jpeg";
+    return { dataUrl: "data:image/" + ext + ";base64," + buf.toString("base64") };
+  });
+
+  ipcMain.handle("photo:list", () => ({ files: listPhotoFiles() }));
+
+  ipcMain.handle("photo:delete", (event, file) => {
+    const safe = sanitizePhotoName(file);
+    if (!/\.(jpe?g|png|webp)$/i.test(safe)) throw new Error("bad-photo");
+    try {
+      fs.unlinkSync(path.join(photosDir(), safe));
+    } catch (e) { /* already gone */ }
+    return true;
+  });
+
+  ipcMain.handle("sync:start", () => {
+    ensureSyncServer();
+    return { port: SYNC_PORT, urls: lanUrls(SYNC_PORT), pin: getSyncPin() };
+  });
+
+  ipcMain.handle("sync:push", (event, snapshot) => {
+    ensureSyncServer();
+    if (snapshot && typeof snapshot === "object") syncSnapshot = snapshot;
+    const ops = syncInbox;
+    syncInbox = [];
+    return { ops };
+  });
 }
 
 /* ---------------- window ---------------- */
@@ -471,7 +626,7 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-/* Export the SSE parser for unit tests (harmless when run by Electron). */
+/* Export the pure helpers for unit tests (harmless when run by Electron). */
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { extractDeltaFromSSELine, buildDiarizeMultipart, parseDiarized };
+  module.exports = { extractDeltaFromSSELine, buildDiarizeMultipart, parseDiarized, sanitizePhotoName };
 }

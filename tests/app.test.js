@@ -122,6 +122,7 @@ globalThis.document = {
 let chatChunkCb = null;
 let updateInstalled = false;
 let updateNotices = [];
+const plannedOps = [];   // ops the "phone" will deliver on the next sync push
 const bridge = {
   getConfig: async () => SCENARIO === "openai"
     ? { hasKey: true, model: "gpt-4o-mini", keyHint: "abcd" }
@@ -145,6 +146,12 @@ const bridge = {
   onUpdateDownloaded: (cb) => { updateNotices.push("downloaded"); return () => { cb(); }; },
   installUpdate: () => { updateInstalled = true; },
   openExternal: async () => {},
+  photoSave: async () => ({ file: "mock.jpg" }),
+  photoGet: async () => ({ dataUrl: "data:image/jpeg;base64,AAA" }),
+  photoList: async () => ({ files: [] }),
+  photoDelete: async () => true,
+  syncStart: async () => ({ port: 8138, urls: ["http://192.168.1.5:8138"], pin: "123456" }),
+  syncPush: async () => ({ ops: plannedOps.splice(0) }),
 };
 globalThis.aqua = bridge;
 
@@ -180,6 +187,7 @@ require(path.join(APP, "tools.js"));      // sets globalThis.Tools
 require(path.join(APP, "journal.js"));    // sets globalThis.Journal
 require(path.join(APP, "weather.js"));    // sets globalThis.Weather
 require(path.join(APP, "games.js"));      // sets globalThis.TicTacToe
+require(path.join(APP, "biz.js"));        // sets globalThis.Inventory etc.
 
 const appCode = fs.readFileSync(path.join(APP, "app.js"), "utf8");
 vm.runInThisContext(appCode, { filename: "app.js" });
@@ -507,6 +515,68 @@ function memoryJSON() {
     await globalThis.handleUserText("skip", "Angela");
     await sleep(90);
     console.log("  spelling drill ✓");
+
+    // ---- r17: shop tools ----
+    // chemical inventory
+    await globalThis.handleUserText("/stock add shock 4 bags");
+    await sleep(60);
+    let m17 = transcript().filter((m) => m.who === "aqua").slice(-1)[0];
+    assert(/shock/i.test(m17.text), "stock add should confirm, got: " + m17.text.slice(0, 80));
+    await globalThis.handleUserText("/stock use shock 3");
+    await sleep(60);
+    m17 = transcript().filter((m) => m.who === "aqua").slice(-1)[0];
+    assert(/LOW/.test(m17.text), "using down to 1 of low-2 should warn, got: " + m17.text.slice(0, 80));
+    await globalThis.handleUserText("/stock buy");
+    await sleep(60);
+    m17 = transcript().filter((m) => m.who === "aqua").slice(-1)[0];
+    assert(/shock/i.test(m17.text), "buy list should flag shock");
+    console.log("  stock ✓");
+
+    // text draft (customer #1 is Smith, added earlier)
+    await globalThis.handleUserText("/text 1 late 20");
+    await sleep(60);
+    m17 = transcript().filter((m) => m.who === "aqua").slice(-1)[0];
+    assert(/20 minutes late/.test(m17.text) && /Smith/.test(m17.text),
+      "text draft should name Smith + 20 min, got: " + m17.text.slice(0, 100));
+    console.log("  text draft ✓");
+
+    // occasions
+    await globalThis.handleUserText("/birthday add Angela 9/16/2016");
+    await sleep(60);
+    await globalThis.handleUserText("/birthday");
+    await sleep(60);
+    m17 = transcript().filter((m) => m.who === "aqua").slice(-1)[0];
+    assert(/Angela/.test(m17.text), "birthday list should show Angela");
+    console.log("  occasions ✓");
+
+    // invoice (route holds 2 stops from the r16 checks)
+    await globalThis.handleUserText("/invoice");
+    await sleep(60);
+    m17 = transcript().filter((m) => m.who === "aqua").slice(-1)[0];
+    assert(/Total: \$130\.00/.test(m17.text),
+      "invoice should total 2 stops x $65, got: " + m17.text.slice(0, 120));
+    console.log("  invoice ✓");
+
+    // photos (empty) + pool panel smoke (new sections must not throw)
+    await globalThis.handleUserText("/photos");
+    await sleep(60);
+    m17 = transcript().filter((m) => m.who === "aqua").slice(-1)[0];
+    assert(/No pool photos yet/.test(m17.text), "photos should report empty");
+    getEl("btn-pool").click();
+    await sleep(60);
+    assert(/Chemical inventory/.test(getEl("panel-body").innerHTML), "pool panel should show inventory");
+    console.log("  photos + pool panel ✓");
+
+    // phone sync: pair info in chat, and a phone op lands in memory
+    plannedOps.push({ kind: "job-add", text: "phone job from the truck" });
+    await globalThis.handleUserText("/sync");
+    await sleep(200);
+    const syncMsgs = transcript().filter((m) => m.who === "aqua").map((m) => m.text).join("\n");
+    assert(/123456/.test(syncMsgs) && /192\.168\.1\.5/.test(syncMsgs), "sync should show PIN + LAN url");
+    const memSync = memoryJSON();
+    assert((memSync.tasks || []).some((t) => /phone job from the truck/.test(t.text)),
+      "phone op should add the job");
+    console.log("  phone sync ✓");
   }
 
   if (SCENARIO === "openai") {

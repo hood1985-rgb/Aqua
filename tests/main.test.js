@@ -95,7 +95,7 @@ async function main() {
   console.log("[ok] key cleared");
 
   // 5) SSE streaming parser
-  const { extractDeltaFromSSELine, buildDiarizeMultipart, parseDiarized } = mainExports;
+  const { extractDeltaFromSSELine, buildDiarizeMultipart, parseDiarized, sanitizePhotoName } = mainExports;
   if (extractDeltaFromSSELine('data: {"choices":[{"delta":{"content":"Hi"}}]}') !== "Hi") {
     throw new Error("SSE content delta not extracted");
   }
@@ -144,6 +144,21 @@ async function main() {
   const empty = parseDiarized({ segments: [] });
   if (empty.text !== "" || empty.speaker !== null) throw new Error("empty segments should give empty text + null speaker");
   console.log("[ok] diarized_json parser");
+
+  // 8) photo filename sanitizer: no slashes, no escaping the photos folder
+  if (sanitizePhotoName("Smith Pool BEFORE.jpg") !== "smith-pool-before.jpg") throw new Error("photo name should slugify");
+  const evil = sanitizePhotoName("..\\..\\secret.txt");
+  if (evil.includes("/") || evil.includes("\\") || evil === "..") throw new Error("evil name escaped: " + evil);
+  if (sanitizePhotoName("..") !== "photo.jpg") throw new Error("bare .. should fall back");
+  if (sanitizePhotoName("").length === 0) throw new Error("empty name needs a fallback");
+  // photo + sync IPC must be registered (lazy server: nothing binds at require time)
+  for (const ch of ["photo:save", "photo:get", "photo:list", "photo:delete", "sync:start", "sync:push"]) {
+    if (typeof handlers[ch] !== "function") throw new Error("missing IPC channel " + ch);
+  }
+  // sync:push with no phone yet returns an empty op list (and would start the server in Electron)
+  const push = await handlers["sync:push"]({}, { tasks: [] });
+  if (!push || !Array.isArray(push.ops) || push.ops.length !== 0) throw new Error("sync:push should return empty ops");
+  console.log("[ok] photo names + photo/sync IPC");
 
   console.log("\nALL CHECKS PASSED - main process logic is sound.");
 }

@@ -71,6 +71,20 @@ own direct calls to OpenAI.
   it's in today's journal.
 - 🚚 **Truck view** — route and jobs in big touch-friendly rows for checking
   off between stops, plus the day's sky at a glance.
+- 🧪 **Chemical inventory** — `/stock add shock 4 bags`, `/stock use shock`, and
+  she keeps a running buy list of whatever's low (`/stock buy`), also in 🧰.
+- 💬 **Customer text drafts** — `/text 1 late 20` writes the "running late"
+  text for you (on-my-way, all-done, reschedule, and balance-due too), with a
+  tap-to-copy card in 🧰.
+- 📸 **Before/after photo log** — save pool photos per customer in 🧰, stored
+  privately on the PC (`/photos` to browse).
+- 🎂 **Birthdays & anniversaries** — `/birthday add Angela 9/16/2016` and she'll
+  remind you when one is coming up (also in 👥).
+- 🧾 **Invoice helper** — `/invoice` turns today's route into a who-owes-what
+  sheet with a per-stop rate, also totaled in 🚚.
+- 📱 **Truck phone sync** — `/sync` (or opening 🚚) starts a PIN-guarded page on
+  the home/office WiFi so the phone in the truck sees the route + jobs and can
+  check things off; it all lands back on the PC.
 - 🇨🇦 **A little something for Rhonda Hood** — and only Rhonda Hood: Aqua lays on
   a friendly Canadian flavour ("favourite colour", the odd "eh?") whenever
   Rhonda's on the mic.
@@ -176,6 +190,12 @@ using her built-in local brain, speaking with Windows' built-in voice.
 | `/note …` | Jot a voice-note into today's journal |
 | `/route` / `/route add …` / `/route done 1` | Today's customer stops, in order |
 | `/truck` | Truck view: route + jobs |
+| `/stock` / `/stock add shock 4` / `/stock buy` | Chemical inventory + buy list |
+| `/text 1 late 20` | Draft a customer text (late, onmyway, done, reschedule, balance) |
+| `/photos` | Before/after photo log per customer pool |
+| `/birthday` / `/anniversary` | Never miss one (`add Name date`, `del n`) |
+| `/invoice` | Today's stops → who owes what |
+| `/sync` | Pair the truck phone (same WiFi, PIN-guarded) |
 | `/game` | Open the game side panel |
 | `/game chess` / `checkers` / `cf` / `rps` / `guess` / `word` | Jump straight to a game |
 | `/move top left` | Tic-tac-toe move — top left, center, B2, or 1-9 |
@@ -255,6 +275,9 @@ tools.js           reminders & service jobs (pure, unit-tested)
 journal.js         her daily-journal logic (pure, unit-tested)
 weather.js         Open-Meteo forecast → pool tips (pure, unit-tested)
 games.js           game logic: tic-tac-toe, RPS, guess-a-number, word guess, school quiz (pure, unit-tested)
+biz.js             shop tools: inventory, text drafts, occasions, invoices (pure, unit-tested)
+phone-sync.js      tiny LAN server for the truck phone (pure Node, unit-tested)
+phone.html         the truck phone's page (route + jobs, PIN-guarded)
 style.css          the look
 package.json       app metadata + build config (electron-builder)
 icons/             app icons (including Windows .ico)
@@ -264,12 +287,7 @@ tests/             self-tests (run: node tests/smoke.js, tests/*.test.js)
 
 ## Roadmap ideas
 
-- Chemical inventory tracker ("we're low on shock — add it to the buy list")
-- Customer text-message drafts ("running 20 minutes late" in one tap)
-- Before/after photo log per customer pool
-- Birthday & anniversary memory for the family and crew
-- Invoice helper: today's stops → a simple amount-due list
-- A cloud-synced phone companion for the truck (true phone sync needs a server)
+- True cloud sync for the truck phone (needs a small server — today it's same-WiFi sync)
 - Add a real code-signing certificate so SmartScreen stays fully quiet (the
   build already signs automatically when you add `CSC_LINK` / `CSC_KEY_PASSWORD`
   as GitHub secrets)

@@ -34,4 +34,10 @@ contextBridge.exposeInMainWorld("aqua", {
   },
   installUpdate: () => ipcRenderer.invoke("update:install"),
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
+  photoSave: (payload) => ipcRenderer.invoke("photo:save", payload),
+  photoGet: (file) => ipcRenderer.invoke("photo:get", file),
+  photoList: () => ipcRenderer.invoke("photo:list"),
+  photoDelete: (file) => ipcRenderer.invoke("photo:delete", file),
+  syncStart: () => ipcRenderer.invoke("sync:start"),
+  syncPush: (snapshot) => ipcRenderer.invoke("sync:push", snapshot),
 });

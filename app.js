@@ -928,6 +928,12 @@ const HELP_TEXT = `Commands you can type anytime:
   /note <text>     jot a voice-note into today's journal
   /route           today's customer stops, in order
   /truck           truck view: route + jobs, big and touch-friendly
+  /stock add shock 4   chemical inventory (/stock, /stock use, /stock buy)
+  /text 2 late 20      draft a customer text (late, on my way, done…)
+  /photos              before/after photo log per customer pool
+  /birthday add …      never miss a birthday (/anniversary too)
+  /invoice             today's stops → who owes what
+  /sync                pair the truck phone (same WiFi)
   /brain           which brain she's thinking with
   /settings        connect her OpenAI brain (API key)
   /backup          export her memory to a file
@@ -1423,6 +1429,33 @@ function handleCommand(line) {
       out.action = "show_truck";
       break;
 
+    case "/stock":
+      out.reply = stockCommand(rest);
+      break;
+
+    case "/text":
+      out.reply = textCommand(rest);
+      break;
+
+    case "/photos":
+      out.reply = photosCommand(rest);
+      break;
+
+    case "/birthday":
+    case "/anniversary":
+      out.reply = occasionCommand(cmd === "/anniversary" ? "anniversary" : "birthday", rest);
+      break;
+
+    case "/invoice":
+      out.reply = invoiceCommand(rest);
+      break;
+
+    case "/sync":
+      // async by nature (starts the LAN server) — the reply lands as its own bubble.
+      out.reply = "";
+      startPhoneSync();
+      break;
+
     case "/update":
       if (bridge && bridge.installUpdate) { bridge.installUpdate(); out.reply = "Installing the update…"; }
       else { out.reply = "No update waiting."; }
@@ -1753,6 +1786,7 @@ async function refreshSmart() {
 
 /* ---------------- reminders & notifications ---------------- */
 function checkReminders() {
+  maybeAnnounceOccasions();   // cheap: fires once a day at most
   const list = mem.data.reminders || [];
   const due = Reminders.due(list, Date.now());
   for (const r of due) {
@@ -2013,8 +2047,54 @@ function renderPeople() {
       </div>
       <p class="hint" id="person-status" style="margin-top:10px;">Type a name (and age for kids), tap <b>Record voice</b>, then talk for a few seconds.</p>
       <p class="hint" style="margin-top:6px;">The clip stays on this PC and is only sent to OpenAI to match who's speaking.</p>
+    </div>
+    <div class="panel-section">
+      <h3>🎂 Birthdays & anniversaries</h3>
+      <div id="occ-soon" class="hint"></div>
+      <div id="occ-list" style="margin-top:8px;"></div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+        <input id="occ-name" class="field-input" style="flex:2;min-width:110px;" placeholder="Name">
+        <select id="occ-type" class="field-input" style="flex:1;min-width:110px;">
+          <option value="birthday">birthday</option>
+          <option value="anniversary">anniversary</option>
+        </select>
+        <input id="occ-date" class="field-input" style="flex:1;min-width:110px;" placeholder="3/14/2015">
+        <button id="occ-add" class="btn-solid">Remember</button>
+      </div>
     </div>`;
   panelBody.innerHTML = html;
+
+  const renderOcc = () => {
+    const up = Occasions.upcoming(occasionList(), new Date(), 30);
+    $("occ-soon").innerHTML = up.length
+      ? up.map((u) => "• " + escapeHtml(Occasions.describe(u))).join("<br>")
+      : "Nothing in the next 30 days.";
+    const box = $("occ-list");
+    const all = occasionList();
+    if (!all.length) { box.innerHTML = ""; return; }
+    box.innerHTML = all.map((o, i) => `
+      <div class="cust-row">
+        <span class="job-num">${o.type === "birthday" ? "🎂" : "💍"}</span>
+        <span class="cust-text"><b>${escapeHtml(o.name)}</b> <span class="hint">${o.month}/${o.day}${o.year ? "/" + o.year : ""}</span></span>
+        <button class="mini-btn occ-del" data-i="${i}" title="Remove">✕</button>
+      </div>`).join("");
+    box.querySelectorAll(".occ-del").forEach((b) => b.addEventListener("click", () => {
+      occasionList().splice(parseInt(b.dataset.i, 10), 1);
+      mem.save();
+      renderPeople();
+    }));
+  };
+  $("occ-add").addEventListener("click", () => {
+    const name = $("occ-name").value.trim();
+    const type = $("occ-type").value === "anniversary" ? "anniversary" : "birthday";
+    const date = Occasions.parseDate($("occ-date").value.trim());
+    if (!name || !date) { toast("Give me a name and a date like 3/14/2015."); return; }
+    occasionList().push(Object.assign({ id: "o" + Date.now().toString(36), name, type }, date));
+    mem.save();
+    toast("Remembered. 💛");
+    renderPeople();
+  });
+  renderOcc();
 
   const nameInput = $("person-name");
   const ageInput = $("person-age");
@@ -3075,7 +3155,16 @@ const panel = $("panel");
 const panelTitle = $("panel-title");
 const panelBody = $("panel-body");
 
+let currentPanel = null;   // which panel is open — phone-sync ops refresh it live
+
+function refreshCurrentPanel() {
+  if (currentPanel === "truck") renderTruck();
+  else if (currentPanel === "pool") renderPool();
+  else if (currentPanel === "people") renderPeople();
+}
+
 function openPanel(which) {
+  currentPanel = which;
   if (which === "profile") renderProfile();
   else if (which === "voices") renderVoices();
   else if (which === "help") renderHelp();
@@ -3091,6 +3180,7 @@ function openPanel(which) {
 }
 
 function closePanel() {
+  currentPanel = null;
   panel.classList.add("hidden");
   panel.classList.remove("open");
   overlay.classList.add("hidden");
@@ -3375,6 +3465,12 @@ function renderHelp() {
     ["/note jot this", "voice-note into today's journal"],
     ["/route add …", "today's customer stops, in order"],
     ["/truck", "truck view: route + jobs"],
+    ["/stock add shock 4", "chemical inventory (/stock, /stock buy)"],
+    ["/text 2 late 20", "draft a customer text"],
+    ["/photos", "before/after pool photos"],
+    ["/birthday add …", "birthdays & anniversaries"],
+    ["/invoice", "today's stops → who owes what"],
+    ["/sync", "pair the truck phone"],
     ["/brain", "which brain she's using"],
     ["/settings", "connect her OpenAI brain"],
     ["/backup", "export her memory to a file"],
@@ -3463,6 +3559,410 @@ async function renderSettings() {
     renderSettings();
     toast("Model updated.");
   });
+}
+
+/* ---------------- shop tools (inventory, texts, photos, occasions, invoice, sync) ---------------- */
+let textDraft = null;   // { custId, kind, extra } — the text being drafted in 🧰 Pool
+
+function stockList() {
+  if (!Array.isArray(mem.data.inventory)) mem.data.inventory = [];
+  return mem.data.inventory;
+}
+
+/* Shared by /stock add and the 🧰 shelf form. Returns the confirmation line, or null. */
+function stockAddItem(raw) {
+  const parsed = Inventory.parseAdd(raw);
+  if (!parsed) return null;
+  const list = stockList();
+  const same = list.find((x) => x.item.toLowerCase() === parsed.item.toLowerCase());
+  if (same) {
+    same.qty = (Number(same.qty) || 0) + parsed.qty;
+    if (parsed.unit && !same.unit) same.unit = parsed.unit;
+    mem.save();
+    return `${same.item}: now ${same.qty} ${same.unit || ""}.`.trim();
+  }
+  list.push({ id: "s" + Date.now().toString(36), item: parsed.item, qty: parsed.qty, unit: parsed.unit, low: 2 });
+  mem.save();
+  return `${parsed.item}: stocked ${parsed.qty} ${parsed.unit || ""} — I'll flag it low below 2.`.trim();
+}
+
+function stockCommand(arg) {
+  const list = stockList();
+  const words = (arg || "").trim();
+  if (!words) {
+    if (!list.length) return "The shelves are bare — /stock add shock 4 bags to start the inventory.";
+    const lines = list.map((it, i) =>
+      `${Inventory.isLow(it) ? "🔴" : "🟢"} ${i + 1}. ${it.item} — ${it.qty} ${it.unit || ""}`.trim() +
+      (Inventory.isLow(it) ? `  (LOW — restock below ${it.low})` : ""));
+    const buy = Inventory.buyList(list);
+    return "Shop inventory:\n" + lines.join("\n") +
+      (buy.length ? "\n\n🛒 Buy list: " + buy.map((b) => b.item).join(", ") + "  (/stock buy)" : "\n\nAll stocked up — nothing to buy.") +
+      "\n\nTip: /stock use 1 takes one off · /stock low 1 5 sets the low flag.";
+  }
+  const lowM = /^low\s+(\S+)\s+(\d+)$/i.exec(words);
+  if (lowM) {
+    const it = Inventory.find(list, lowM[1]);
+    if (!it) return "Couldn't find that — /stock to see the numbers.";
+    it.low = Math.max(0, parseInt(lowM[2], 10));
+    mem.save();
+    return `${it.item}: I'll flag it low at ${it.low} ${it.unit || ""}.`.trim();
+  }
+  if (/^buy$/i.test(words)) {
+    const buy = Inventory.buyList(list);
+    if (!buy.length) return "Buy list is empty — shelves look good. 👍";
+    return "🛒 Buy list (running low):\n" + buy.map((b, i) => `${i + 1}. ${b.item} — ${b.qty} ${b.unit || ""} left`.trim()).join("\n");
+  }
+  const useM = /^use\s+(.+)$/i.exec(words);
+  if (useM) {
+    const parts = useM[1].trim().split(/\s+/);
+    let n = 1;
+    if (/^\d+$/.test(parts[parts.length - 1]) && parts.length > 1) n = parseInt(parts.pop(), 10);
+    const it = Inventory.find(list, parts.join(" "));
+    if (!it) return "Couldn't find that — /stock to see the numbers.";
+    it.qty = Math.max(0, (Number(it.qty) || 0) - n);
+    mem.save();
+    return Inventory.isLow(it)
+      ? `Used ${n} ${it.item} — ${it.qty} ${it.unit || ""} left. 🔴 That's LOW — it's on the buy list.`.trim()
+      : `Used ${n} ${it.item} — ${it.qty} ${it.unit || ""} left.`.trim();
+  }
+  const delM = /^del(?:ete)?\s+(\S+)$/i.exec(words);
+  if (delM) {
+    const it = Inventory.find(list, delM[1]);
+    if (!it) return "Couldn't find that — /stock to see the numbers.";
+    mem.data.inventory = list.filter((x) => x !== it);
+    mem.save();
+    return `${it.item} is off the shelf list.`;
+  }
+  const addM = /^add\s+(.+)$/i.exec(words);
+  if (addM) {
+    const msg = stockAddItem(addM[1]);
+    if (!msg) return "Usage: /stock add shock 4 bags";
+    return msg;
+  }
+  return "Usage: /stock, /stock add <item> <qty> [unit], /stock use <#> [n], /stock low <#> <n>, /stock del <#>, /stock buy";
+}
+
+function textCommand(arg) {
+  const customers = mem.data.customers || [];
+  if (!customers.length) return "No customers on file yet — /customer add Smith first.";
+  const tokens = (arg || "").trim().split(/\s+/).filter(Boolean);
+  if (!tokens.length) {
+    return "Draft a text: /text <customer #> <late|onmyway|done|reschedule|balance> [minutes or $amount]\n" +
+      "e.g. /text 1 late 20 — and find everyone in /customers.";
+  }
+  // the kind word splits "who" (before it) from "extra" (after it)
+  let kindIdx = -1;
+  for (let i = 0; i < tokens.length; i++) {
+    if (Texts.key(tokens[i])) { kindIdx = i; break; }
+  }
+  if (kindIdx < 0) return "Which kind? late, onmyway, done, reschedule, or balance — e.g. /text 1 late 20.";
+  const who = tokens.slice(0, kindIdx).join(" ");
+  const kind = Texts.key(tokens[kindIdx]);
+  const extra = tokens.slice(kindIdx + 1).join(" ");
+  if (!who) return "Text who? Give me a customer number — /customers to see them.";
+  let cust = null;
+  if (/^\d+$/.test(who)) cust = customers[parseInt(who, 10) - 1];
+  else {
+    const q = who.toLowerCase();
+    cust = customers.find((c) => (c.text || "").toLowerCase().includes(q));
+  }
+  if (!cust) return "Couldn't find that customer — /customers to see the numbers.";
+  const name = Texts.customerName(cust.text);
+  const nums = extra.match(/[\d.]+/);
+  const draft = Texts.draft(kind, {
+    name,
+    mins: kind === "late" ? (nums ? parseInt(nums[0], 10) : 20) : 0,
+    amount: kind === "balance" ? (nums ? Invoice.money(parseFloat(nums[0])) : "the balance") : "",
+  });
+  return `Text for ${name} — copy, paste, send:\n\n"${draft}"`;
+}
+
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (e) { /* fall through to the old way */ }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return !!ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+/* ---------------- pool photos (before/after log) ---------------- */
+
+function photoIndex() {
+  if (!Array.isArray(mem.data.photos)) mem.data.photos = [];
+  return mem.data.photos;
+}
+
+function photosCommand(arg) {
+  const list = photoIndex();
+  const words = (arg || "").trim();
+  const delM = /^del(?:ete)?\s+(\d+)$/i.exec(words);
+  if (delM) {
+    const p = list[parseInt(delM[1], 10) - 1];
+    if (!p) return "No such photo — /photos to see the numbers.";
+    mem.data.photos = list.filter((x) => x !== p);
+    mem.save();
+    if (bridge && bridge.photoDelete) bridge.photoDelete(p.file).catch(() => {});
+    return `Deleted photo ${delM[1]} (${p.customer} — ${p.label}).`;
+  }
+  const query = words ? words.toLowerCase() : null;
+  const shown = query ? list.filter((p) => (p.customer || "").toLowerCase().includes(query)) : list;
+  if (!shown.length) {
+    return list.length
+      ? `No photos matching "${words}" — /photos to see them all.`
+      : "No pool photos yet — open 🧰 Pool and scroll to Pool photos to save before/afters per customer.";
+  }
+  const lines = shown.map((p) => {
+    const n = list.indexOf(p) + 1;
+    const when = p.date ? new Date(p.date).toLocaleDateString() : "";
+    return `${n}. ${p.customer || "pool"} — ${p.label}${when ? " (" + when + ")" : ""}`;
+  });
+  return `Pool photos (${shown.length}${query ? " matching" : ""}):\n${lines.join("\n")}\n\nSee them in 🧰 Pool → Pool photos. /photos del <n> removes one.`;
+}
+
+/* Shrink a picked photo to a small JPEG so the log stays light. */
+function photoFileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const fail = () => {
+      // last resort: ship the raw file and let the main process enforce the size cap
+      try {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = reject;
+        r.readAsDataURL(file);
+      } catch (e) { reject(e); }
+    };
+    try {
+      if (!window.createImageBitmap) return fail();
+      window.createImageBitmap(file).then((bmp) => {
+        try {
+          const max = 1024;
+          const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(bmp.width * scale));
+          canvas.height = Math.max(1, Math.round(bmp.height * scale));
+          canvas.getContext("2d").drawImage(bmp, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", 0.82));
+        } catch (e) { fail(); }
+      }).catch(fail);
+    } catch (e) { fail(); }
+  });
+}
+
+/* ---------------- birthdays & anniversaries ---------------- */
+
+function occasionList() {
+  if (!Array.isArray(mem.data.occasions)) mem.data.occasions = [];
+  return mem.data.occasions;
+}
+
+/* "Angela 9/16/2016" / "Mom March 4" -> { name, date } — the date is the longest
+   tail that parses, so multi-word names keep working. */
+function splitOccasionAdd(text) {
+  const tokens = String(text || "").trim().split(/\s+/).filter(Boolean);
+  for (let tail = Math.min(3, tokens.length - 1); tail >= 1; tail--) {
+    const date = Occasions.parseDate(tokens.slice(-tail).join(" "));
+    if (date) {
+      const name = tokens.slice(0, -tail).join(" ").trim();
+      if (name) return { name, date };
+    }
+  }
+  return null;
+}
+
+function occasionCommand(type, arg) {
+  const list = occasionList();
+  const words = (arg || "").trim();
+  const mine = list.filter((o) => o.type === type);
+  if (!words) {
+    const up = Occasions.upcoming(mine, new Date(), 30);
+    let out = up.length
+      ? `${type === "birthday" ? "🎂 Birthdays" : "💍 Anniversaries"} coming up:\n` +
+        up.map((u) => "• " + Occasions.describe(u)).join("\n")
+      : `Nothing on the ${type} calendar in the next 30 days.`;
+    if (mine.length) {
+      out += `\n\nAll ${mine.length} on file:\n` +
+        mine.map((o) => `${list.indexOf(o) + 1}. ${o.name} — ${o.month}/${o.day}${o.year ? "/" + o.year : ""}`).join("\n");
+    }
+    out += `\n\n/${type} add <name> <date> — e.g. /${type} add Angela 9/16/2016. /${type} del <n> forgets one.`;
+    return out;
+  }
+  const delM = /^del(?:ete)?\s+(\d+)$/i.exec(words);
+  if (delM) {
+    const o = list[parseInt(delM[1], 10) - 1];
+    if (!o) return `No such date — /${type} to see the numbers.`;
+    mem.data.occasions = list.filter((x) => x !== o);
+    mem.save();
+    return `${o.name}'s ${o.type} is off the calendar.`;
+  }
+  const addM = /^add\s+(.+)$/i.exec(words);
+  if (addM) {
+    const split = splitOccasionAdd(addM[1]);
+    if (!split) return `I couldn't read that date — try /${type} add Angela 9/16/2016 or /${type} add Mom March 4.`;
+    // re-adding the same person updates instead of duplicating
+    const same = list.find((o) => o.type === type && o.name.toLowerCase() === split.name.toLowerCase());
+    if (same) {
+      Object.assign(same, split.date);
+      mem.save();
+      return `${same.name}'s ${type} updated to ${same.month}/${same.day}${same.year ? "/" + same.year : ""}.`;
+    }
+    list.push(Object.assign({ id: "o" + Date.now().toString(36), name: split.name, type }, split.date));
+    mem.save();
+    return `Remembered: ${split.name}'s ${type}, ${split.date.month}/${split.date.day}${split.date.year ? "/" + split.date.year : ""}. I'll remind you. 💛`;
+  }
+  return `Usage: /${type}, /${type} add <name> <date>, /${type} del <n>`;
+}
+
+function maybeAnnounceOccasions() {
+  const today = Journal.todayKey();
+  if (mem.data.occasionCheck === today) return;
+  mem.data.occasionCheck = today;
+  mem.save();
+  const up = Occasions.upcoming(occasionList(), new Date(), 7);
+  if (!up.length) return;
+  const msg = "📅 Don't forget:\n" + up.map((u) => "• " + Occasions.describe(u)).join("\n");
+  addMessage("aqua", msg);
+  const todays = up.filter((u) => u.inDays === 0);
+  if (todays.length) Speaker.say(todays.map((u) => Occasions.describe(u)).join(" "));
+}
+
+/* ---------------- invoice helper ---------------- */
+
+function invoiceState() {
+  if (!mem.data.invoice || typeof mem.data.invoice !== "object") mem.data.invoice = { rate: 65, amounts: {} };
+  if (!mem.data.invoice.amounts) mem.data.invoice.amounts = {};
+  return mem.data.invoice;
+}
+
+function invoiceCommand(arg) {
+  const inv = invoiceState();
+  const stops = routeList();
+  const words = (arg || "").trim();
+  const rateM = /^rate\s+\$?([\d.]+)$/i.exec(words);
+  if (rateM) {
+    inv.rate = Math.max(0, parseFloat(rateM[1]));
+    mem.save();
+    return `Service rate is now ${Invoice.money(inv.rate)} a stop — /invoice to see today's sheet.`;
+  }
+  const setM = /^(\d+)\s+\$?([\d.]+)$/.exec(words);
+  if (setM) {
+    const stop = stops[parseInt(setM[1], 10) - 1];
+    if (!stop) return "No such stop — /route to see today's numbers.";
+    inv.amounts[stop.id] = Math.max(0, parseFloat(setM[2]));
+    mem.save();
+    return `Stop ${setM[1]} (${stop.text}): ${Invoice.money(inv.amounts[stop.id])}.`;
+  }
+  if (words) return "Usage: /invoice, /invoice rate 65, /invoice <stop #> <amount>";
+  if (!stops.length) return "No route today, no invoice — /route add Smith to line up the day's stops.";
+  const overrides = {};
+  stops.forEach((s, i) => { if (inv.amounts[s.id] != null) overrides[i] = inv.amounts[s.id]; });
+  return Invoice.text(stops, inv.rate, overrides) +
+    `\n\nRate is ${Invoice.money(inv.rate)} a stop (/invoice rate N). Per-stop price: /invoice 2 120.`;
+}
+
+/* ---------------- phone sync (same-WiFi truck companion) ---------------- */
+let syncInfo = null;    // { port, urls, pin } once the server is up
+let syncTimer = null;
+
+function syncSnapshot() {
+  return {
+    tasks: (mem.data.tasks || []).map((t) => ({ id: t.id, text: t.text, done: !!t.done })),
+    route: routeList().map((s) => ({ id: s.id, text: s.text })),
+    routeDone: routeDoneSet().ids.slice(),
+    customers: (mem.data.customers || []).map((c) => ({ id: c.id, text: c.text })),
+  };
+}
+
+function applySyncOps(ops) {
+  const notes = [];
+  for (const op of ops || []) {
+    if (!op || typeof op !== "object") continue;
+    if (op.kind === "job-done" && op.id) {
+      const t = (mem.data.tasks || []).find((x) => x.id === op.id);
+      if (t && !t.done) { t.done = true; notes.push(`checked off "${t.text}"`); }
+    } else if (op.kind === "job-add" && op.text) {
+      mem.data.tasks = mem.data.tasks || [];
+      Tasks.add(mem.data.tasks, String(op.text).slice(0, 200));
+      notes.push(`added job "${String(op.text).slice(0, 60)}"`);
+    } else if (op.kind === "route-done" && op.id) {
+      const set = routeDoneSet();
+      const stop = routeList().find((s) => s.id === op.id);
+      if (stop && !set.ids.includes(op.id)) { set.ids.push(op.id); notes.push(`checked off stop "${stop.text}"`); }
+    }
+  }
+  if (!notes.length) return;
+  mem.save();
+  toast("📱 Phone " + notes.join("; ") + ".");
+  refreshCurrentPanel();
+}
+
+async function syncPushNow() {
+  if (!bridge || !bridge.syncPush) return;
+  try {
+    const res = await bridge.syncPush(syncSnapshot());
+    if (res && res.ops && res.ops.length) applySyncOps(res.ops);
+  } catch (e) { /* phone sync is best-effort; the app never depends on it */ }
+}
+
+/* The 15-second push loop starts only once the boss asks for sync
+   (/sync or opening 🚚) — we don't bind a LAN port uninvited. */
+function ensureSyncLoop() {
+  if (syncTimer || !bridge || !bridge.syncPush) return;
+  syncTimer = setInterval(syncPushNow, 15000);
+}
+
+async function startPhoneSync() {
+  if (!bridge || !bridge.syncStart) {
+    const msg = "Phone sync needs the desktop app — open Aqua on the PC and type /sync there.";
+    addMessage("aqua", msg);
+    Speaker.say(msg);
+    return;
+  }
+  try {
+    syncInfo = await bridge.syncStart();
+    ensureSyncLoop();
+    const urls = (syncInfo.urls || []).join("\n");
+    const msg = `📱 Phone sync is live! On the truck phone (same WiFi), open:\n${urls}\nPIN: ${syncInfo.pin}\n\nThe phone sees today's route + jobs and can check them off — it all lands back here, and I'll keep it fresh while you work.`;
+    addMessage("aqua", msg);
+    Speaker.say("Phone sync is live. The PIN is " + String(syncInfo.pin).split("").join(" ") + ".");
+    syncPushNow();
+    refreshCurrentPanel();
+  } catch (e) {
+    addMessage("aqua", "Hmm, the phone sync server couldn't start — is something else on that port? Try again in a bit.");
+  }
+}
+
+async function initTruckSync(box) {
+  if (!box) return;
+  if (!bridge || !bridge.syncStart) {
+    box.textContent = "Phone sync needs the desktop app.";
+    return;
+  }
+  try {
+    syncInfo = await bridge.syncStart();
+    ensureSyncLoop();
+    syncPushNow();
+    const urls = (syncInfo.urls || []).map((u) => `<div class="sync-url">${escapeHtml(u)}</div>`).join("");
+    box.innerHTML = `
+      <div class="sync-box">
+        <div class="hint">On the truck phone's browser (same WiFi), open:</div>
+        ${urls || '<div class="hint">looking for this PC on the WiFi…</div>'}
+        <div class="sync-pin">PIN: ${escapeHtml(syncInfo.pin)}</div>
+      </div>`;
+  } catch (e) {
+    box.textContent = "Couldn't start phone sync — try reopening this view.";
+  }
 }
 
 /* ---------------- today's route (pool stops in order) ---------------- */
@@ -3573,6 +4073,35 @@ function renderPool() {
         <button id="cust-add" class="btn-solid">Add</button>
       </div>
       <div id="cust-list" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="panel-section">
+      <h3>Chemical inventory</h3>
+      <div style="display:flex;gap:8px;">
+        <input id="stock-input" class="field-input" placeholder="e.g. shock 4 bags">
+        <button id="stock-add" class="btn-solid">Add</button>
+      </div>
+      <div id="stock-list" style="margin-top:12px;"></div>
+      <div id="stock-buy" class="hint" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="panel-section">
+      <h3>💬 Text a customer</h3>
+      <div id="text-draft-box"><div class="hint">Tap 💬 next to any customer above to draft a text.</div></div>
+    </div>
+
+    <div class="panel-section">
+      <h3>Pool photos</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <input id="photo-cust" class="field-input" style="flex:2;min-width:120px;" placeholder="Customer, e.g. Smith">
+        <select id="photo-label" class="field-input" style="flex:1;min-width:100px;">
+          <option value="before">before</option>
+          <option value="after">after</option>
+        </select>
+        <input id="photo-file" type="file" accept="image/*" class="field-input" style="flex:2;min-width:140px;">
+        <button id="photo-add" class="btn-solid">Save</button>
+      </div>
+      <div id="photo-grid" class="thumb-grid" style="margin-top:12px;"></div>
     </div>`;
 
   panelBody.innerHTML = html;
@@ -3715,11 +4244,16 @@ function renderPool() {
       <div class="cust-row">
         <span class="job-num">${i + 1}</span>
         <span class="cust-text">${escapeHtml(c.text)}</span>
+        <button class="mini-btn cust-text" data-id="${c.id}" title="Draft a text">💬</button>
         <button class="mini-btn cust-del" data-id="${c.id}" title="Remove">✕</button>
       </div>`).join("");
     list.querySelectorAll(".cust-del").forEach((b) => b.addEventListener("click", () => {
       mem.data.customers = mem.data.customers.filter((c) => c.id !== b.dataset.id);
       mem.save();
+      renderPool();
+    }));
+    list.querySelectorAll(".cust-text").forEach((b) => b.addEventListener("click", () => {
+      textDraft = { custId: b.dataset.id, kind: "late", extra: "" };
       renderPool();
     }));
   };
@@ -3732,6 +4266,146 @@ function renderPool() {
     $("cust-input").value = "";
     renderPool();
   });
+  // chemical inventory
+  const renderStock = () => {
+    const list = stockList();
+    const box = $("stock-list");
+    if (!list.length) {
+      box.innerHTML = '<div class="hint">Shelves are bare — add what\'s in the shop above.</div>';
+    } else {
+      box.innerHTML = list.map((it, i) => `
+        <div class="job-row${Inventory.isLow(it) ? " stock-low" : ""}">
+          <span class="job-num">${i + 1}</span>
+          <span class="job-text">${escapeHtml(it.item)} — <b>${escapeHtml(String(it.qty))} ${escapeHtml(it.unit || "")}</b>${Inventory.isLow(it) ? ' <span class="low-tag">LOW</span>' : ""}</span>
+          <button class="mini-btn stock-use" data-id="${it.id}" title="Use one">−1</button>
+          <button class="mini-btn stock-plus" data-id="${it.id}" title="Add one">+1</button>
+          <button class="mini-btn job-del stock-del" data-id="${it.id}" title="Remove">✕</button>
+        </div>`).join("");
+      box.querySelectorAll(".stock-use").forEach((b) => b.addEventListener("click", () => {
+        const it = stockList().find((x) => x.id === b.dataset.id);
+        if (it) { it.qty = Math.max(0, (Number(it.qty) || 0) - 1); mem.save(); }
+        renderPool();
+      }));
+      box.querySelectorAll(".stock-plus").forEach((b) => b.addEventListener("click", () => {
+        const it = stockList().find((x) => x.id === b.dataset.id);
+        if (it) { it.qty = (Number(it.qty) || 0) + 1; mem.save(); }
+        renderPool();
+      }));
+      box.querySelectorAll(".stock-del").forEach((b) => b.addEventListener("click", () => {
+        mem.data.inventory = stockList().filter((x) => x.id !== b.dataset.id);
+        mem.save();
+        renderPool();
+      }));
+    }
+    const buy = Inventory.buyList(stockList());
+    $("stock-buy").textContent = buy.length
+      ? "🛒 Buy list: " + buy.map((b) => b.item).join(", ")
+      : "";
+  };
+  $("stock-add").addEventListener("click", () => {
+    const raw = $("stock-input").value.trim();
+    if (!raw) return;
+    if (!stockAddItem(raw)) { toast("Try like: shock 4 bags"); return; }
+    $("stock-input").value = "";
+    renderPool();
+  });
+  renderStock();
+
+  // text drafts
+  const renderTextDraft = () => {
+    const box = $("text-draft-box");
+    const cust = (mem.data.customers || []).find((c) => c.id === (textDraft && textDraft.custId));
+    if (!cust) {
+      box.innerHTML = '<div class="hint">Tap 💬 next to any customer above to draft a text.</div>';
+      return;
+    }
+    const name = Texts.customerName(cust.text);
+    const kinds = [["late", "Running late"], ["onmyway", "On my way"], ["done", "All done"], ["reschedule", "Reschedule"], ["balance", "Balance due"]];
+    const nums = (textDraft.extra || "").match(/[\d.]+/);
+    const draft = Texts.draft(textDraft.kind, {
+      name,
+      mins: parseInt((nums && nums[0]) || "20", 10),
+      amount: textDraft.kind === "balance"
+        ? (nums ? Invoice.money(parseFloat(nums[0])) : "the balance")
+        : "",
+    });
+    box.innerHTML = `
+      <div class="chip-row">${kinds.map(([k, label]) => `<button class="chip${k === textDraft.kind ? " current" : ""}" data-tkind="${k}">${label}</button>`).join("")}</div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <input id="text-extra" class="field-input" placeholder="${textDraft.kind === "balance" ? "amount, e.g. 65" : "minutes late, e.g. 20"}" value="${escapeHtml(textDraft.extra)}">
+        <button id="text-copy" class="btn-solid">Copy</button>
+      </div>
+      <div class="draft-box">${escapeHtml(draft)}</div>`;
+    box.querySelectorAll("[data-tkind]").forEach((chip) => chip.addEventListener("click", () => {
+      textDraft.kind = chip.dataset.tkind;
+      renderPool();
+    }));
+    const extraInput = $("text-extra");
+    if (extraInput) extraInput.addEventListener("change", (e) => {
+      textDraft.extra = e.target.value;
+      renderTextDraft();
+    });
+    const copyBtn = $("text-copy");
+    if (copyBtn) copyBtn.addEventListener("click", async () => {
+      const ok = await copyText(draft);
+      toast(ok ? "Copied — paste it into your texts." : "Couldn't copy — long-press the draft.");
+    });
+  };
+  renderTextDraft();
+
+  // pool photos
+  const renderPhotos = () => {
+    const grid = $("photo-grid");
+    const list = photoIndex();
+    if (!list.length) {
+      grid.innerHTML = '<div class="hint">No photos yet — before/afters land here, tagged per customer.</div>';
+      return;
+    }
+    grid.innerHTML = list.map((p, i) => `
+      <div class="thumb">
+        <img id="thumb-${i}" alt="${escapeHtml((p.customer || "pool") + " " + p.label)}">
+        <div class="thumb-cap">${escapeHtml(p.customer || "pool")} · ${escapeHtml(p.label)}</div>
+        <button class="mini-btn photo-del" data-i="${i}" title="Delete">✕</button>
+      </div>`).join("");
+    grid.querySelectorAll(".photo-del").forEach((b) => b.addEventListener("click", async () => {
+      const gone = photoIndex()[parseInt(b.dataset.i, 10)];
+      if (gone) {
+        mem.data.photos = photoIndex().filter((x) => x !== gone);
+        mem.save();
+        if (bridge && bridge.photoDelete) { try { await bridge.photoDelete(gone.file); } catch (e) {} }
+      }
+      renderPool();
+    }));
+    if (bridge && bridge.photoGet) {
+      list.forEach((p, i) => {
+        bridge.photoGet(p.file).then((res) => {
+          const img = $("thumb-" + i);
+          if (img && res && res.dataUrl) img.src = res.dataUrl;
+        }).catch(() => {});
+      });
+    }
+  };
+  $("photo-add").addEventListener("click", async () => {
+    const customer = $("photo-cust").value.trim() || "pool";
+    const label = $("photo-label").value || "before";
+    const picker = $("photo-file");
+    const file = picker && picker.files && picker.files[0];
+    if (!file) { toast("Pick a photo first."); return; }
+    if (!bridge || !bridge.photoSave) { toast("Photos need the desktop app."); return; }
+    try {
+      const dataUrl = await photoFileToDataUrl(file);
+      const res = await bridge.photoSave({ customer, label, dataUrl });
+      photoIndex().push({ file: res.file, customer, label, date: new Date().toISOString() });
+      mem.save();
+      $("photo-cust").value = "";
+      toast("Photo saved.");
+      renderPool();
+    } catch (e) {
+      toast(/too-big/i.test(String(e && e.message)) ? "That photo's too big — try a smaller one." : "Couldn't save that photo.");
+    }
+  });
+  renderPhotos();
+
   renderCust();
 }
 
@@ -3758,6 +4432,14 @@ function renderTruck() {
     <div class="panel-section">
       <h3>Today's sky</h3>
       <div id="truck-weather" class="hint">…</div>
+    </div>
+    <div class="panel-section">
+      <h3>Invoice helper</h3>
+      <div id="truck-invoice"></div>
+    </div>
+    <div class="panel-section">
+      <h3>📱 Phone sync</h3>
+      <div id="truck-sync" class="hint">Starting…</div>
     </div>`;
 
   const rEl = $("truck-route");
@@ -3802,6 +4484,37 @@ function renderTruck() {
     mem.save();
     renderTruck();
   });
+
+  const inv = invoiceState();
+  const iEl = $("truck-invoice");
+  if (!stops.length) {
+    iEl.innerHTML = '<div class="hint">No route today — add stops in 🧰 Pool or with /route add.</div>';
+  } else {
+    const amtOf = (s) => (inv.amounts[s.id] != null ? Number(inv.amounts[s.id]) : Number(inv.rate) || 0);
+    const total = stops.reduce((n, s) => n + amtOf(s), 0);
+    iEl.innerHTML = `
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <input id="inv-rate" type="number" min="0" step="1" class="field-input" value="${inv.rate}" title="Default $ per stop">
+        <button id="inv-rate-set" class="btn-solid">Rate</button>
+      </div>
+      ${stops.map((s, i) => `
+        <div class="inv-row">
+          <span class="inv-num">${i + 1}</span>
+          <span class="inv-text">${escapeHtml(s.text)}</span>
+          <span class="inv-amt">${Invoice.money(amtOf(s))}</span>
+        </div>`).join("")}
+      <div class="inv-row inv-total"><span class="inv-num"></span><span class="inv-text">Total</span><span class="inv-amt">${Invoice.money(total)}</span></div>
+      <div class="hint" style="margin-top:6px;">Per-stop price in chat: /invoice 2 120</div>`;
+    $("inv-rate-set").addEventListener("click", () => {
+      const v = parseFloat($("inv-rate").value);
+      if (!isFinite(v) || v < 0) { toast("Give me a real dollar amount."); return; }
+      inv.rate = v;
+      mem.save();
+      renderTruck();
+    });
+  }
+
+  initTruckSync($("truck-sync"));
 
   const wEl = $("truck-weather");
   if (mem.data.location) loadWeather(mem.data.location, wEl);
@@ -3870,6 +4583,10 @@ async function boot() {
   mem.data.checkScore = mem.data.checkScore || { player: 0, aqua: 0, tie: 0 };
   mem.data.chessScore = mem.data.chessScore || { player: 0, aqua: 0, tie: 0 };
   mem.data.route = mem.data.route || [];
+  mem.data.inventory = mem.data.inventory || [];
+  mem.data.occasions = mem.data.occasions || [];
+  mem.data.photos = mem.data.photos || [];
+  invoiceState();
   if (mem.data.strict_voices === undefined) mem.data.strict_voices = true;
   if (!mem.data.gameDifficulty) mem.data.gameDifficulty = "medium";
   if (!mem.data.tts_model) mem.data.tts_model = "tts-1";
@@ -3905,6 +4622,8 @@ async function boot() {
   if (openJobs.length) {
     addMessage("aqua", `You've got ${openJobs.length} open job${openJobs.length === 1 ? "" : "s"} on the board — tap 🧰 when you're ready to dig in.`);
   }
+
+  maybeAnnounceOccasions();
 
   if (!smart.on) {
     addMessage("aqua", "Tip: open ⚙️ Settings to connect my OpenAI brain — or just talk to me like this for now.");
