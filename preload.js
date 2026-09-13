@@ -40,4 +40,13 @@ contextBridge.exposeInMainWorld("aqua", {
   photoDelete: (file) => ipcRenderer.invoke("photo:delete", file),
   syncStart: () => ipcRenderer.invoke("sync:start"),
   syncPush: (snapshot) => ipcRenderer.invoke("sync:push", snapshot),
+  quitApp: () => ipcRenderer.invoke("app:quit"),
+  getBackgrounded: () => ipcRenderer.invoke("app:backgrounded"),
+  onVisibility: (cb) => {
+    const handler = (_event, hidden) => cb(hidden);
+    ipcRenderer.on("aqua:visibility", handler);
+    return () => ipcRenderer.removeListener("aqua:visibility", handler);
+  },
+  getAutostart: () => ipcRenderer.invoke("app:autostart-get"),
+  setAutostart: (on) => ipcRenderer.invoke("app:autostart-set", on),
 });

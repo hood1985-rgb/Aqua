@@ -123,6 +123,9 @@ let chatChunkCb = null;
 let updateInstalled = false;
 let updateNotices = [];
 const plannedOps = [];   // ops the "phone" will deliver on the next sync push
+let quitRequested = false;
+let visibilityCb = null;
+let autostartVal = true;
 const bridge = {
   getConfig: async () => SCENARIO === "openai"
     ? { hasKey: true, model: "gpt-4o-mini", keyHint: "abcd" }
@@ -152,6 +155,11 @@ const bridge = {
   photoDelete: async () => true,
   syncStart: async () => ({ port: 8138, urls: ["http://192.168.1.5:8138"], pin: "123456" }),
   syncPush: async () => ({ ops: plannedOps.splice(0) }),
+  quitApp: async () => { quitRequested = true; },
+  getBackgrounded: async () => false,
+  onVisibility: (cb) => { visibilityCb = cb; return () => {}; },
+  getAutostart: async () => autostartVal,
+  setAutostart: async (on) => { autostartVal = !!on; return autostartVal; },
 };
 globalThis.aqua = bridge;
 
@@ -610,6 +618,56 @@ function memoryJSON() {
     assert((memSync.tasks || []).some((t) => /phone job from the truck/.test(t.text)),
       "phone op should add the job");
     console.log("  phone sync ✓");
+
+    // ---- background running: silent while hidden, wake parsing, autostart, quit ----
+    // wake command parsing (pure)
+    assert.deepStrictEqual(globalThis.parseWakeCommand("hey aqua"), { rest: "" }, "bare wake");
+    assert.deepStrictEqual(globalThis.parseWakeCommand("Hey Aqua, what's the weather?"),
+      { rest: "what's the weather" }, "wake + command in one breath");
+    assert.deepStrictEqual(globalThis.parseWakeCommand("well hey aqua!!"), { rest: "" }, "punctuation trimmed");
+    assert.strictEqual(globalThis.parseWakeCommand("hey aquatic life"), null, "no partial-word trigger");
+    assert.strictEqual(globalThis.parseWakeCommand("hey there"), null, "no trigger without her name");
+    console.log("  wake parsing ✓");
+
+    // reminders stay silent-but-visible while backgrounded
+    assert(typeof visibilityCb === "function", "boot should subscribe to visibility");
+    visibilityCb(true);
+    await globalThis.handleUserText("/remind in 1 second to hidden hello");
+    await sleep(1400);
+    const s0 = spoken.length;
+    await globalThis.checkReminders();
+    await sleep(60);
+    assert(spoken.length === s0, "backgrounded reminder stays silent");
+    const bellHidden = transcript().filter((m) => m.who === "aqua").map((m) => m.text).join("\n");
+    assert(/hidden hello/.test(bellHidden), "backgrounded reminder still lands in chat");
+    visibilityCb(false);
+    await globalThis.handleUserText("/remind in 1 second to loud hello");
+    await sleep(1400);
+    await globalThis.checkReminders();
+    await sleep(60);
+    assert(spoken.slice(s0).some((s) => /loud hello/.test(s)), "visible reminder speaks aloud");
+    console.log("  background silence ✓");
+
+    // autostart command round-trip
+    await globalThis.handleUserText("/autostart off");
+    await sleep(80);
+    let autoMsg = transcript().filter((m) => m.who === "aqua").slice(-1)[0];
+    assert(/won't start with Windows/.test(autoMsg.text), "autostart off confirms, got: " + autoMsg.text.slice(0, 60));
+    assert(autostartVal === false, "autostart pref stored off");
+    await globalThis.handleUserText("/autostart");
+    await sleep(80);
+    autoMsg = transcript().filter((m) => m.who === "aqua").slice(-1)[0];
+    assert(/is off/.test(autoMsg.text), "autostart status shows off");
+    await globalThis.handleUserText("/autostart on");
+    await sleep(80);
+    assert(autostartVal === true, "autostart pref stored on");
+    console.log("  autostart ✓");
+
+    // /quit calls through to a real quit (tray parks her; quit actually quits)
+    await globalThis.handleUserText("/quit");
+    await sleep(1100);
+    assert(quitRequested === true, "/quit should request a full quit");
+    console.log("  quit path ✓");
   }
 
   if (SCENARIO === "openai") {

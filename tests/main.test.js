@@ -15,21 +15,55 @@ const Module = require("module");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "aqua-main-"));
 
 const handlers = {};
+const mockWindows = [];
+const trayInstances = [];
+let lockRequested = false;
+let quitCalled = false;
 const electronMock = {
   app: {
     getPath: () => path.join(tmp, "userData"),
     whenReady: () => Promise.resolve(),
     on: () => {},
-    quit: () => {},
+    quit: () => { quitCalled = true; },
+    isPackaged: false,
+    requestSingleInstanceLock: () => { lockRequested = true; return true; },
+    getLoginItemSettings: () => ({}),
   },
   BrowserWindow: class {
-    constructor() {
-      this.webContents = { setWindowOpenHandler: () => {} };
+    constructor(opts) {
+      this.opts = opts || {};
+      this.handlers = {};
+      this.visible = this.opts.show !== false;
+      this.minimized = false;
+      const sent = [];
+      this.webContents = {
+        setWindowOpenHandler: () => {},
+        sent,
+        send: (ch, ...a) => { sent.push([ch, ...a]); },
+      };
+      mockWindows.push(this);
     }
     setMenuBarVisibility() {}
     loadFile() {}
-    on() {}
+    on(ev, fn) { (this.handlers[ev] ||= []).push(fn); }
+    hide() { this.visible = false; (this.handlers.hide || []).forEach((f) => f()); }
+    show() { this.visible = true; (this.handlers.show || []).forEach((f) => f()); }
+    isVisible() { return this.visible; }
+    isMinimized() { return this.minimized; }
+    minimize() { this.minimized = true; (this.handlers.minimize || []).forEach((f) => f()); }
+    restore() { this.minimized = false; (this.handlers.restore || []).forEach((f) => f()); }
+    focus() {}
   },
+  Tray: class {
+    constructor() { trayInstances.push(this); }
+    setToolTip() {}
+    setContextMenu(menu) { this.menu = menu; }
+    on() {}
+    displayBalloon() {}
+    destroy() { this.destroyed = true; }
+  },
+  Menu: { buildFromTemplate: (t) => t },
+  nativeImage: { createFromPath: () => ({}) },
   ipcMain: {
     handle(name, fn) { handlers[name] = fn; },
   },
@@ -168,6 +202,55 @@ async function main() {
   const def = buildSpeechBody({ text: "hi" });
   if (def.model !== "tts-1" || def.voice !== "nova" || def.speed !== 1) throw new Error("speech defaults wrong");
   console.log("[ok] speech body builder");
+
+  // 10) single instance lock + background-friendly window options
+  if (!lockRequested) throw new Error("should request the single-instance lock");
+  const win = mockWindows[0];
+  if (!win) throw new Error("expected a BrowserWindow");
+  if (win.opts.show === false) throw new Error("normal launch should show the window");
+  if (!win.opts.webPreferences || win.opts.webPreferences.backgroundThrottling !== false) {
+    throw new Error("background throttling must be off so tray timers keep cadence");
+  }
+  console.log("[ok] single instance + window options");
+
+  // 11) closing the window parks to tray instead of quitting
+  let prevented = false;
+  win.handlers.close[0]({ preventDefault() { prevented = true; } });
+  if (!prevented) throw new Error("close should be intercepted");
+  if (win.isVisible()) throw new Error("window should hide on close");
+  if (!trayInstances.length) throw new Error("tray should exist after hide");
+  if (quitCalled) throw new Error("close must not quit");
+  const labels = (trayInstances[0].menu || []).map((i) => i.label);
+  if (!labels.includes("Show Aqua") || !labels.includes("Quit Aqua")) {
+    throw new Error("tray menu needs Show + Quit, got: " + labels.join(","));
+  }
+  const vis = win.webContents.sent.filter(([ch]) => ch === "aqua:visibility");
+  if (!vis.length || vis[vis.length - 1][1] !== true) throw new Error("renderer should be told she's hidden");
+  win.show();
+  const vis2 = win.webContents.sent.filter(([ch]) => ch === "aqua:visibility");
+  if (vis2[vis2.length - 1][1] !== false) throw new Error("renderer should be told she's back");
+  win.minimize();
+  if (await handlers["app:backgrounded"]({}) !== true) throw new Error("minimized counts as backgrounded");
+  win.restore();
+  console.log("[ok] close parks to tray + visibility reports");
+
+  // 12) app:quit fully quits (tray destroyed, close proceeds)
+  await handlers["app:quit"]({});
+  if (!quitCalled) throw new Error("app:quit should quit");
+  if (!trayInstances[0].destroyed) throw new Error("tray should be destroyed on quit");
+  prevented = false;
+  win.handlers.close[0]({ preventDefault() { prevented = true; } });
+  if (prevented) throw new Error("close during quit should proceed");
+  console.log("[ok] app:quit fully quits");
+
+  // 13) autostart round-trip (default on, survives key saves)
+  if (await handlers["app:autostart-get"]({}) !== true) throw new Error("autostart should default on");
+  await handlers["app:autostart-set"]({}, false);
+  if (await handlers["app:autostart-get"]({}) !== false) throw new Error("autostart should stick off");
+  await handlers["config:save"]({}, { openai_api_key: "sk-test-x", model: "gpt-4o-mini" });
+  if (await handlers["app:autostart-get"]({}) !== false) throw new Error("config:save wiped autostart");
+  await handlers["app:autostart-set"]({}, true);
+  console.log("[ok] autostart preference");
 
   console.log("\nALL CHECKS PASSED - main process logic is sound.");
 }

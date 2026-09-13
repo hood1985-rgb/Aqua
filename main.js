@@ -11,7 +11,7 @@
 
 "use strict";
 
-const { app, BrowserWindow, ipcMain, session, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, session, shell, Tray, Menu, nativeImage } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const https = require("https");
@@ -28,6 +28,24 @@ try {
 }
 
 let mainWindow = null;
+
+/* Single instance: a background listener must never run twice (mic fights,
+   double trays). A second launch just wakes the existing window. */
+let haveInstanceLock = true;
+try {
+  haveInstanceLock = !app.requestSingleInstanceLock || app.requestSingleInstanceLock() !== false;
+} catch (e) { haveInstanceLock = true; }
+if (!haveInstanceLock) {
+  try { app.quit(); } catch (e) {}
+} else if (app.on) {
+  app.on("second-instance", () => {
+    if (mainWindow) {
+      if (!mainWindow.isVisible()) mainWindow.show();
+      if (mainWindow.isMinimized && mainWindow.isMinimized()) mainWindow.restore();
+      if (mainWindow.focus) mainWindow.focus();
+    }
+  });
+}
 
 function setupAutoUpdater() {
   if (!autoUpdater) return;
@@ -60,6 +78,7 @@ function loadConfig() {
     if (data.openai_api_key) cfg.openai_api_key = data.openai_api_key;
     if (data.model) cfg.model = data.model;
     if (data.sync_pin) cfg.sync_pin = String(data.sync_pin);
+    if (typeof data.autostart === "boolean") cfg.autostart = data.autostart;
   } catch (e) {
     /* no keys file yet — that's fine */
   }
@@ -579,6 +598,113 @@ function registerIpc() {
     syncInbox = [];
     return { ops };
   });
+
+  ipcMain.handle("app:quit", () => {
+    quitApp();
+    return true;
+  });
+
+  ipcMain.handle("app:backgrounded", () => isBackgrounded());
+
+  ipcMain.handle("app:autostart-get", () => getAutostart());
+
+  ipcMain.handle("app:autostart-set", (event, on) => setAutostart(on));
+}
+
+/* ---------------- background running (tray + visibility) ---------------- */
+
+let tray = null;
+let quitting = false;
+let hideBalloonShown = false;
+
+function ensureTray() {
+  if (tray) return tray;
+  try {
+    const icon = nativeImage.createFromPath(path.join(__dirname, "icons", "icon-512.png"));
+    tray = new Tray(icon && icon.resize ? icon.resize({ width: 32, height: 32 }) : icon);
+    tray.setToolTip("Aqua \u2014 listening for \u201cHey Aqua\u201d");
+    tray.setContextMenu(Menu.buildFromTemplate([
+      {
+        label: "Show Aqua",
+        click: () => { if (mainWindow) { mainWindow.show(); if (mainWindow.focus) mainWindow.focus(); } },
+      },
+      {
+        label: "Quit Aqua",
+        click: () => { quitApp(); },
+      },
+    ]));
+    tray.on("click", () => {
+      if (!mainWindow) return;
+      if (mainWindow.isVisible()) mainWindow.hide();
+      else { mainWindow.show(); if (mainWindow.focus) mainWindow.focus(); }
+    });
+  } catch (e) {
+    tray = null;
+  }
+  return tray;
+}
+
+/* Hidden (tray) or minimized counts as backgrounded — the renderer stays
+   silent then, unless someone says "Hey Aqua". */
+function isBackgrounded() {
+  if (!mainWindow) return false;
+  try {
+    if (!mainWindow.isVisible()) return true;
+    if (mainWindow.isMinimized && mainWindow.isMinimized()) return true;
+  } catch (e) {}
+  return false;
+}
+
+function reportVisibility() {
+  try {
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send("aqua:visibility", isBackgrounded());
+    }
+  } catch (e) {}
+}
+
+function quitApp() {
+  quitting = true;
+  try { if (tray) tray.destroy(); } catch (e) {}
+  tray = null;
+  try { if (syncServer) syncServer.close(); } catch (e) {}
+  try { app.quit(); } catch (e) {}
+}
+
+/* Start-with-Windows preference. Default ON: she always runs unless told not to. */
+function getAutostart() {
+  try {
+    const data = JSON.parse(fs.readFileSync(keysPath(), "utf8"));
+    if (typeof data.autostart === "boolean") return data.autostart;
+  } catch (e) { /* no keys file yet */ }
+  return true;
+}
+
+function setAutostart(on) {
+  const val = !!on;
+  let cfg = {};
+  try { cfg = JSON.parse(fs.readFileSync(keysPath(), "utf8")); } catch (e2) { /* fresh file */ }
+  cfg.autostart = val;
+  writeConfig(cfg);
+  applyAutostart();
+  return val;
+}
+
+function applyAutostart() {
+  try {
+    // Only a real install touches login items — never a dev/test run.
+    if (app.isPackaged && app.setLoginItemSettings) {
+      app.setLoginItemSettings({ openAtLogin: getAutostart() });
+    }
+  } catch (e) { /* login items are best-effort */ }
+}
+
+function wasOpenedAtLogin() {
+  try {
+    return !!(app.getLoginItemSettings && app.getLoginItemSettings().wasOpenedAtLogin);
+  } catch (e) {
+    return false;
+  }
 }
 
 /* ---------------- window ---------------- */
@@ -593,15 +719,38 @@ function createWindow() {
     icon: path.join(__dirname, "icons", "icon-512.png"),
     autoHideMenuBar: true,
     title: "Aqua — your cyber-buddy",
+    show: !wasOpenedAtLogin(),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      backgroundThrottling: false,
     },
   });
 
   mainWindow.setMenuBarVisibility(false);
+
+  // The X parks her in the tray (still listening) — only Quit actually quits.
+  mainWindow.on("close", (e) => {
+    if (!quitting) {
+      e.preventDefault();
+      mainWindow.hide();
+      ensureTray();
+      if (!hideBalloonShown && tray && tray.displayBalloon) {
+        hideBalloonShown = true;
+        try {
+          tray.displayBalloon({
+            title: "Aqua",
+            content: "I\u2019m still here, listening for \u201cHey Aqua\u201d. Right-click my tray icon to quit.",
+          });
+        } catch (err) { /* balloons are best-effort */ }
+      }
+    }
+  });
+  for (const ev of ["hide", "show", "minimize", "restore"]) {
+    mainWindow.on(ev, reportVisibility);
+  }
 
   // open external links (e.g. "get an API key") in the real browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -618,7 +767,7 @@ function createWindow() {
 
 /* ---------------- lifecycle ---------------- */
 
-app.whenReady().then(() => {
+if (haveInstanceLock) app.whenReady().then(() => {
   // Let the renderer use the microphone (and nothing else).
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
     callback(permission === "media");
@@ -626,6 +775,8 @@ app.whenReady().then(() => {
 
   registerIpc();
   createWindow();
+  applyAutostart();
+  if (mainWindow && !mainWindow.isVisible()) ensureTray();   // login-start: tray-only
   setupAutoUpdater();
 
   app.on("activate", () => {

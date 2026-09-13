@@ -507,8 +507,13 @@ let busy = false;
 let recording = false;
 let handsfreeOn = false;
 let wakeOn = false;
-let wakeRec = null;
 let wakeBusy = false;
+let backgrounded = false;   // window hidden/minimized — silent unless spoken to
+let wakeStream = null;      // mic stream held open while the wake word is on
+let wakeCtx = null;
+let wakeTimer = null;
+let wakeStarting = false;
+let wakeSampling = false;
 
 /* side games state (the games live in the dock beside the chat) */
 const dock = { tab: "ttt" };   // ttt | rps | guess | word
@@ -956,6 +961,7 @@ const HELP_TEXT = `Commands you can type anytime:
   /rate +10%       speak faster (+) or slower (-)
   /handsfree       toggle always-listening mode
   /wakeword        toggle the "Hey Aqua" wake word
+  /autostart on|off  start with Windows & wait in the tray
   /name <name>     tell her your name
   /forget <word>   forget memories containing that word
   /pool            your pool setup (gallons & chlorine type)
@@ -994,12 +1000,13 @@ const HELP_TEXT = `Commands you can type anytime:
   /settings        connect her OpenAI brain (API key)
   /backup          export her memory to a file
   /reset           wipe everything she knows (asks first)
-  /quit            say goodbye and close
+  /quit            say goodbye and turn her fully off
 
 Tips:
   * Press Enter to send, Shift+Enter for a new line.
   * Tap the microphone to talk, or the headphones for hands-free.
-  * Say "Hey Aqua" when the wake word is on.
+  * Say "Hey Aqua" anytime — she\u2019s always listening (toggle: /wakeword).
+  * Closing the window parks her in the tray, still listening. /quit turns her fully off.
   * Play on the game side (🎮) — tic-tac-toe, chess, checkers, connect four,
     rock-paper-scissors, guess-the-number, and word guess. Say your move
     while you chat ("top left", "e2 to e4", "column 4").
@@ -1341,6 +1348,12 @@ function handleCommand(line) {
       break;
     }
 
+    case "/autostart": {
+      out.reply = "";
+      autostartCommand(rest);
+      break;
+    }
+
     case "/game":
     case "/tictactoe":
     case "/ttt": {
@@ -1622,36 +1635,43 @@ async function recordOnce() {
   const audio = await blob.arrayBuffer();
   const mime = rec.mimeType || mimeType || "audio/webm";
   try {
-    // If people are enrolled, ask OpenAI who's talking (and transcribe in one go).
-    const people = roster().filter((p) => p && p.name && p.ref);
-    if (people.length && bridge.identifySpeaker) {
-      let res;
-      try {
-        res = await bridge.identifySpeaker(audio, mime, people);
-      } catch (e) {
-        console.error(e);
-        // Speaker matching hiccup — in strict mode we can't verify who's
-        // talking, so we don't act on it. Otherwise fall back to plain words.
-        if (strictVoices()) {
-          return { message: "I couldn't verify who's talking just now — try again, or type to me.", gated: true };
-        }
-        const fb = await bridge.transcribe(audio, mime);
-        if (fb.text) return { text: fb.text };
-        return { message: "I didn't catch that — try again, or just type." };
-      }
-      if (res.text) {
-        if (!res.speaker && strictVoices()) return { message: STRANGER_VOICE_MSG, gated: true };
-        return { text: res.text, speaker: res.speaker };
-      }
-      return { message: "I didn't catch that — try again, or just type." };
-    }
-    const res = await bridge.transcribe(audio, mime);
-    if (res.text) return { text: res.text };
-    return { message: "I didn't catch that — try again, or just type." };
+    return await transcribeAudio(audio, mime);
   } catch (e) {
     console.error(e);
     return { message: "Couldn't transcribe — check your API key and internet." };
   }
+}
+
+/* Transcribe recorded audio, identifying the speaker when voices are enrolled.
+   Shared by tap-to-talk and the wake-word sampler. Returns { text, speaker? }
+   or { message, gated? }. */
+async function transcribeAudio(audio, mime) {
+  // If people are enrolled, ask OpenAI who's talking (and transcribe in one go).
+  const people = roster().filter((p) => p && p.name && p.ref);
+  if (people.length && bridge.identifySpeaker) {
+    let res;
+    try {
+      res = await bridge.identifySpeaker(audio, mime, people);
+    } catch (e) {
+      console.error(e);
+      // Speaker matching hiccup — in strict mode we can't verify who's
+      // talking, so we don't act on it. Otherwise fall back to plain words.
+      if (strictVoices()) {
+        return { message: "I couldn't verify who's talking just now — try again, or type to me.", gated: true };
+      }
+      const fb = await bridge.transcribe(audio, mime);
+      if (fb.text) return { text: fb.text };
+      return { message: "I didn't catch that — try again, or just type." };
+    }
+    if (res.text) {
+      if (!res.speaker && strictVoices()) return { message: STRANGER_VOICE_MSG, gated: true };
+      return { text: res.text, speaker: res.speaker };
+    }
+    return { message: "I didn't catch that — try again, or just type." };
+  }
+  const res = await bridge.transcribe(audio, mime);
+  if (res.text) return { text: res.text };
+  return { message: "I didn't catch that — try again, or just type." };
 }
 
 function stopRecordingEarly() {
@@ -1703,100 +1723,221 @@ function setHandsfree(on) {
   btnHandsfree.classList.toggle("active", on);
   btnHandsfree.title = on ? "Hands-free listening is ON (say 'stop listening')" : "Hands-free listening";
   if (on) {
-    if (wakeOn) setWake(false);
+    if (wakeOn) setWake(false, true);
     if (!bridge) { toast("Open Aqua as the desktop app to use hands-free."); handsfreeOn = false; btnHandsfree.classList.remove("active"); return; }
     toast("Hands-free on — just talk. Say “stop listening” to pause.");
     handsfreeLoop();
+  } else if (mem.data.wake_word !== false) {
+    setWake(true, true);   // back to wake-word standby
   }
 }
 
 /* ---------------- wake word ("Hey Aqua") ---------------- */
-function wakeWordAvailable() {
-  return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+/* Always-on listening that keeps working when she's backgrounded to the tray
+   (the Web Speech API can't be trusted on a hidden page, so the wake word
+   uses its own loop instead): the mic stays open, an energy gate notices
+   speech, and only actual speech gets transcribed — a quiet room costs
+   nothing, and strict mode means an unverified voice can't wake her. */
+
+const WAKE_POLL_MS = 200;     // mic energy check cadence
+const WAKE_RMS = 0.06;        // "someone is talking" loudness
+const WAKE_HOT_MS = 400;      // sustained sound before sampling it
+const WAKE_MAX_MS = 6000;     // longest single sample
+const WAKE_SILENCE_MS = 1200; // trailing silence that ends a sample
+
+/* Pull "hey aqua" out of a transcript. Pure — covered by the harness.
+   Returns { rest } (command words after it, maybe "") or null. */
+function parseWakeCommand(text) {
+  const m = /\bhey aqua\b([\s\S]*)/i.exec(" " + String(text || "") + " ");
+  if (!m) return null;
+  const rest = m[1].replace(/^[.,!?;:\s]+|[.,!?;:\s]+$/g, "");
+  return { rest };
 }
 
-function setWake(on) {
+function setWake(on, quiet) {
   wakeOn = on;
-  if (!on) {
-    if (wakeRec) { try { wakeRec.abort(); } catch (e) {} wakeRec = null; }
-    return;
-  }
+  // Only explicit toggles persist — boot and failure paths stay quiet so a
+  // blocked mic doesn't permanently switch the feature off.
+  if (!quiet) { mem.data.wake_word = on; mem.save(); }
+  if (!on) { stopWakeLoop(); return; }
   if (handsfreeOn) setHandsfree(false);
-  if (!wakeWordAvailable()) {
-    toast("Wake word isn't supported here — use hands-free instead.");
+  if (!bridge) {
+    if (!quiet) toast("Open Aqua as the desktop app for the wake word.");
     wakeOn = false;
     return;
   }
-  toast("Wake word on — say “Hey Aqua” anytime.");
+  if (!quiet) toast("Wake word on — say \u201cHey Aqua\u201d anytime.");
   startWakeLoop();
 }
 
-function startWakeLoop() {
-  if (!wakeOn) return;
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let rec;
+async function startWakeLoop() {
+  if (!wakeOn || wakeTimer || wakeStarting) return;
+  wakeStarting = true;
   try {
-    rec = new SR();
-  } catch (e) {
-    toast("Wake word couldn't start.");
-    setWake(false);
-    return;
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      if (wakeOn) toast("Mic blocked for the wake word.");
+      wakeOn = false;
+      return;
+    }
+    if (!wakeOn) { stream.getTracks().forEach((t) => t.stop()); return; }
+    let analyser, buf;
+    try {
+      wakeCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const src = wakeCtx.createMediaStreamSource(stream);
+      analyser = wakeCtx.createAnalyser();
+      analyser.fftSize = 1024;
+      src.connect(analyser);
+      buf = new Uint8Array(analyser.fftSize);
+    } catch (e) {
+      stream.getTracks().forEach((t) => t.stop());
+      if (wakeCtx) { try { wakeCtx.close(); } catch (e2) {} wakeCtx = null; }
+      wakeOn = false;
+      return;
+    }
+    wakeStream = stream;
+    let loudMs = 0;
+    wakeTimer = setInterval(() => {
+      if (!wakeOn) return;
+      // Never sample while she's busy, talking, or already sampling.
+      if (wakeSampling || wakeBusy || busy || Speaker._speaking) { loudMs = 0; return; }
+      try {
+        analyser.getByteTimeDomainData(buf);
+      } catch (e) { return; }
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+      if (Math.sqrt(sum / buf.length) > WAKE_RMS) loudMs += WAKE_POLL_MS;
+      else loudMs = 0;
+      if (loudMs >= WAKE_HOT_MS) { loudMs = 0; wakeSample(); }
+    }, WAKE_POLL_MS);
+  } finally {
+    wakeStarting = false;
   }
-  wakeRec = rec;
-  rec.continuous = true;
-  rec.interimResults = true;
-  rec.lang = "en-US";
+}
 
-  rec.onresult = (e) => {
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      const t = (e.results[i][0].transcript || "").toLowerCase().trim();
-      if (/\bhey aqua\b/.test(t) || /^aqua\b/.test(t)) {
-        wakeRec = null;                    // so onend doesn't auto-restart
-        try { rec.stop(); } catch (err) {}
-        handleWakeTrigger();
-        return;
-      }
+function stopWakeLoop() {
+  if (wakeTimer) { clearInterval(wakeTimer); wakeTimer = null; }
+  if (wakeCtx) { try { wakeCtx.close(); } catch (e) {} wakeCtx = null; }
+  if (wakeStream) { try { wakeStream.getTracks().forEach((t) => t.stop()); } catch (e) {} wakeStream = null; }
+  wakeSampling = false;
+}
+
+/* One speech burst → transcribe → act if she heard her name. */
+async function wakeSample() {
+  if (wakeSampling || !wakeOn || !wakeStream) return;
+  wakeSampling = true;
+  try {
+    // Stay armed-but-quiet without a key: sampling starts working the
+    // moment a key is added, with no errors in between.
+    const cfg = await bridge.getConfig();
+    if (!cfg.hasKey) return;
+    const clip = await Promise.race([
+      recordWakeUtterance(),
+      sleep(WAKE_MAX_MS + 3000).then(() => null),
+    ]);
+    if (!wakeOn || !clip) return;
+    const res = await transcribeAudio(clip.audio, clip.mime);
+    if (!wakeOn || !res.text) return;
+    const hit = parseWakeCommand(res.text);
+    if (!hit) return;
+    if (hit.rest) {
+      // "Hey Aqua, what's the weather" in one breath — no second recording.
+      await handleUserText(hit.rest, res.speaker);
+    } else {
+      await handleWakeTrigger();
     }
-  };
+  } catch (e) {
+    console.error(e);   // network hiccup — keep listening
+  } finally {
+    wakeSampling = false;
+  }
+}
 
-  rec.onerror = (e) => {
-    if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-      toast("Mic blocked for the wake word.");
-      setWake(false);
-    } else if (e.error === "network") {
-      toast("Wake word needs an internet connection.");
-      setWake(false);
-    }
-  };
-
-  rec.onend = () => {
-    if (wakeOn && wakeRec === rec) {
-      wakeRec = null;
-      setTimeout(startWakeLoop, 400);
-    }
-  };
-
-  try { rec.start(); } catch (e) { toast("Wake word couldn't start."); setWake(false); }
+/* Record one burst from the held wake stream: stops after trailing silence
+   (or the cap). Returns { audio, mime } or null when nothing usable. */
+function recordWakeUtterance() {
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (v) => { if (!settled) { settled = true; resolve(v); } };
+    const stream = wakeStream;
+    if (!stream) { settle(null); return; }
+    let rec;
+    try {
+      const mimeType = micMimeType();
+      rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    } catch (e) { settle(null); return; }
+    const chunks = [];
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    let ctx = null;
+    let analyser = null;
+    let buf = null;
+    try {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const src = ctx.createMediaStreamSource(stream);
+      analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      src.connect(analyser);
+      buf = new Uint8Array(analyser.fftSize);
+    } catch (e) { /* no silence detection — the cap still ends it */ }
+    const startedAt = Date.now();
+    let silentMs = 0;
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearInterval(poll);
+      clearTimeout(cap);
+      if (ctx) { try { ctx.close(); } catch (e) {} }
+      try { rec.stop(); } catch (e) { settle(null); }
+    };
+    rec.onstop = async () => {
+      try {
+        const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+        if (!blob.size) { settle(null); return; }
+        settle({ audio: await blob.arrayBuffer(), mime: rec.mimeType || "audio/webm" });
+      } catch (e) { settle(null); }
+    };
+    const poll = setInterval(() => {
+      if (done || !analyser) return;
+      try { analyser.getByteTimeDomainData(buf); } catch (e) { return; }
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+      if (Math.sqrt(sum / buf.length) > WAKE_RMS) silentMs = 0;
+      else silentMs += 200;
+      if (silentMs >= WAKE_SILENCE_MS && Date.now() - startedAt > 800) finish();
+    }, 200);
+    const cap = setTimeout(finish, WAKE_MAX_MS);
+    try { rec.start(250); } catch (e) { finish(); }
+  });
 }
 
 async function handleWakeTrigger() {
-  if (wakeBusy || busy) { if (wakeOn) startWakeLoop(); return; }
+  if (wakeBusy || busy) return;
   wakeBusy = true;
-  toast("Yes, boss?");
-  const res = await recordOnce();
-  if (res && res.text) {
-    const low = res.text.toLowerCase().replace(/[.,!?]/g, "").trim();
-    if (["stop listening", "stop wake word", "wake word off", "stop wake"].includes(low)) {
-      setWake(false);
-      toast("Wake word off.");
+  try {
+    // A toast is invisible while she's backgrounded — ping the OS instead.
+    if (backgrounded && "Notification" in window && Notification.permission === "granted") {
+      try { new Notification("Aqua", { body: "Yes, boss? Listening…" }); } catch (e) {}
     } else {
-      await handleUserText(res.text, res.speaker);
+      toast("Yes, boss?");
     }
-  } else if (res && res.gated) {
-    toast(res.message, 4000);
+    const res = await recordOnce();
+    if (res && res.text) {
+      const low = res.text.toLowerCase().replace(/[.,!?]/g, "").trim();
+      if (["stop listening", "stop wake word", "wake word off", "stop wake"].includes(low)) {
+        setWake(false);
+        toast("Wake word off.");
+      } else {
+        await handleUserText(res.text, res.speaker);
+      }
+    } else if (res && res.gated) {
+      toast(res.message, 4000);
+    }
+  } finally {
+    wakeBusy = false;
   }
-  wakeBusy = false;
-  if (wakeOn) startWakeLoop();
 }
 
 async function handsfreeLoop() {
@@ -1863,7 +2004,7 @@ function checkReminders() {
     r.fired = true;
     const msg = r.message || "Reminder";
     addMessage("aqua", `⏰ ${msg}`);
-    Speaker.say(msg);
+    if (!backgrounded) Speaker.say(msg);
     toast(`⏰ ${msg}`, 6000);
     if ("Notification" in window && Notification.permission === "granted") {
       try { new Notification("Aqua", { body: msg }); } catch (e) {}
@@ -3510,6 +3651,7 @@ function renderHelp() {
     ["/rate +10%", "speak faster (+) or slower (-)"],
     ["/handsfree", "always-listening mode"],
     ["/wakeword", "toggle the “Hey Aqua” wake word"],
+    ["/autostart on|off", "start with Windows & wait in the tray"],
     ["/name Robert", "tell her your name"],
     ["/forget word", "forget memories with that word"],
     ["/pool set 15000", "your pool size"],
@@ -3547,7 +3689,7 @@ function renderHelp() {
     ["/backup", "export her memory to a file"],
     ["/update", "install a downloaded update"],
     ["/reset", "wipe everything (asks first)"],
-    ["/quit", "say goodbye and close"],
+    ["/quit", "say goodbye and turn her fully off"],
   ];
   panelBody.innerHTML = `
     <div class="panel-section"><h3>Commands</h3>
@@ -3600,7 +3742,37 @@ async function renderSettings() {
       <h3>Voice &amp; ears</h3>
       <p class="hint">• <b>Speaking:</b> she talks with an OpenAI neural voice (pick one in 🎙️ Voices) — much more human than the default system voice. Falls back to Windows offline.<br>
       • <b>Listening:</b> the 🎤 mic uses OpenAI Whisper with your key.</p>
+    </div>
+    <div class="panel-section">
+      <h3>Always running</h3>
+      <label style="display:flex;align-items:center;gap:8px;font-size:14px;">
+        <input type="checkbox" id="autostart-box" style="accent-color:#46d7ff;width:16px;height:16px;">
+        Start with Windows &amp; wait in the tray
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:14px;margin-top:8px;">
+        <input type="checkbox" id="wake-box" style="accent-color:#46d7ff;width:16px;height:16px;">
+        Listen for “Hey Aqua”, even in the tray
+      </label>
+      <p class="hint" style="margin-top:8px;">Closing the window parks her in the tray, silent but listening. Quitting from the tray icon — or /quit — turns her fully off.</p>
     </div>`;
+
+  const autoBox = $("autostart-box");
+  if (autoBox && bridge.getAutostart) {
+    bridge.getAutostart().then((on) => { autoBox.checked = !!on; }).catch(() => {});
+    autoBox.addEventListener("change", async () => {
+      try {
+        await bridge.setAutostart(!!autoBox.checked);
+        toast(autoBox.checked ? "I'll start with Windows." : "I won't start with Windows anymore.");
+      } catch (e) {
+        toast("Hmm, that didn't stick.");
+      }
+    });
+  }
+  const wakeBox = $("wake-box");
+  if (wakeBox) {
+    wakeBox.checked = mem.data.wake_word !== false;
+    wakeBox.addEventListener("change", () => setWake(!!wakeBox.checked));
+  }
 
   $("key-link").addEventListener("click", (e) => {
     e.preventDefault();
@@ -3905,7 +4077,7 @@ function maybeAnnounceOccasions() {
   const msg = "📅 Don't forget:\n" + up.map((u) => "• " + Occasions.describe(u)).join("\n");
   addMessage("aqua", msg);
   const todays = up.filter((u) => u.inDays === 0);
-  if (todays.length) Speaker.say(todays.map((u) => Occasions.describe(u)).join(" "));
+  if (todays.length && !backgrounded) Speaker.say(todays.map((u) => Occasions.describe(u)).join(" "));
 }
 
 /* ---------------- invoice helper ---------------- */
@@ -4012,6 +4184,29 @@ async function startPhoneSync() {
   } catch (e) {
     addMessage("aqua", "Hmm, the phone sync server couldn't start — is something else on that port? Try again in a bit.");
   }
+}
+
+async function autostartCommand(arg) {
+  const word = String(arg || "").trim().toLowerCase();
+  if (!bridge || !bridge.getAutostart) {
+    addMessage("aqua", "Autostart needs the desktop app.");
+    return;
+  }
+  if (word === "on" || word === "off") {
+    const on = word === "on";
+    try {
+      await bridge.setAutostart(on);
+      addMessage("aqua", on
+        ? "I'll start with Windows and wait in the tray, listening for \u201cHey Aqua\u201d."
+        : "I won't start with Windows anymore — open me whenever you want me.");
+    } catch (e) {
+      addMessage("aqua", "Hmm, that didn't stick — try again?");
+    }
+    return;
+  }
+  let cur = true;
+  try { cur = await bridge.getAutostart(); } catch (e) {}
+  addMessage("aqua", `Starting with Windows is ${cur ? "on" : "off"}. Usage: /autostart on|off`);
 }
 
 async function initTruckSync(box) {
@@ -4621,6 +4816,7 @@ $("modal-confirm").addEventListener("click", () => {
 
 function quitScreen() {
   Speaker.stop();
+  if (bridge && bridge.quitApp) { bridge.quitApp().catch(() => {}); return; }
   document.body.innerHTML =
     '<div style="height:100vh;display:grid;place-items:center;color:#9fc3de;font-family:Segoe UI,sans-serif;">🌊 Aqua has closed her ears for now. See you next time!</div>';
   try { window.close(); } catch (e) {}
@@ -4672,6 +4868,15 @@ async function boot() {
   await refreshSmart();
   await maybeJournalize();   // roll yesterday's talk into the journal
 
+  // Backgrounded? (login-start parks her straight in the tray.) The main
+  // process also pushes live hide/show updates after this.
+  if (bridge && bridge.onVisibility) {
+    bridge.onVisibility((hidden) => { backgrounded = !!hidden; });
+  }
+  if (bridge && bridge.getBackgrounded) {
+    try { backgrounded = !!(await bridge.getBackgrounded()); } catch (e) {}
+  }
+
   // auto-update notices (installed builds only)
   if (bridge && bridge.onUpdateAvailable) {
     bridge.onUpdateAvailable((v) => toast(`A new Aqua version (${v}) is downloading…`, 5000));
@@ -4706,10 +4911,14 @@ async function boot() {
 
   setInterval(checkReminders, 10000);
 
+  // Always-on ears from boot — even backgrounded in the tray. Quiet: if the
+  // mic or bridge isn't ready, she just stays off until /wakeword.
+  if (mem.data.wake_word !== false) setWake(true, true);
+
   setSendDisabled(false);
   input.focus();
 
-  setTimeout(() => { if (Speaker.enabled) Speaker.say(greeting); }, 400);
+  setTimeout(() => { if (Speaker.enabled && !backgrounded) Speaker.say(greeting); }, 400);
 }
 
 document.addEventListener("DOMContentLoaded", boot);

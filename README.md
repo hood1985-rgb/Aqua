@@ -30,7 +30,14 @@ own direct calls to OpenAI.
   math. She logs service jobs and keeps the board tidy.
 - ⏰ **Reminders & timers** — "remind me in 20 minutes to check the pH." She
   remembers, hollers at you, and can send desktop notifications.
-- 🎙️ **"Hey Aqua" wake word** — hands-free start whenever you want it.
+- 🎙️ **"Hey Aqua" wake word, always on** — say it anytime and she listens, then
+  responds out loud. Only actual speech gets transcribed, so a quiet room costs
+  nothing; strict voice mode (on by default) means a stranger's voice can't wake
+  her. Toggle with `/wakeword`.
+- 🌙 **Always running in the background** — closing the window parks her in
+  the tray (taskbar corner), silent but listening. She starts with Windows by
+  default (toggle in ⚙️ Settings or `/autostart off`). Quitting from the tray
+  icon — or `/quit` — turns her fully off.
 - 🗣️ **A genuinely human voice** — OpenAI's neural text-to-speech (`tts-1` for a
   snappy reply, `tts-1-hd` for a richer one): pick from 10 lifelike voices and
   preview them, and set her volume louder or softer. Falls back to Windows'
@@ -116,8 +123,8 @@ own direct calls to OpenAI.
 
 ### Option A — download a ready-made .exe (easiest)
 
-Go to the **Releases** page of this repository and download **`Aqua-Setup-1.2.0.exe`**
-(the installer) or **`Aqua-Portable-1.2.0.exe`** (no install — just run it).
+Go to the **Releases** page of this repository and download **`Aqua-Setup-1.3.0.exe`**
+(the installer) or **`Aqua-Portable-1.3.0.exe`** (no install — just run it).
 
 - **Installer:** double-click, choose where to install, and it adds Aqua to your
   Start menu and desktop.
@@ -176,6 +183,7 @@ using her built-in local brain, speaking with Windows' built-in voice.
 | `/rate +10%` or `/rate -10%` | Speak faster or slower |
 | `/handsfree` | Toggle always-listening mode |
 | `/wakeword` | Toggle the "Hey Aqua" wake word |
+| `/autostart on` / `/autostart off` | Start with Windows & wait in the tray |
 | `/name Robert` | Tell her your name directly |
 | `/forget fishing` | Delete any memories matching a word |
 | `/pool set 15000` | Tell her your pool size |
@@ -212,7 +220,7 @@ using her built-in local brain, speaking with Windows' built-in voice.
 | `/backup` | Export her memory to a file |
 | `/update` | Install a downloaded update |
 | `/reset` | Wipe her memory completely (she'll ask first) |
-| `/quit` | Say goodbye and exit |
+| `/quit` | Say goodbye and turn her fully off |
 
 ## Knowing who's talking
 
