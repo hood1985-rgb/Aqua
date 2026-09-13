@@ -222,21 +222,37 @@ function multipart(fields, file) {
 }
 
 async function transcribeWithWhisper(audio, mimeType, key) {
+  /* Prefer OpenAI's newer, more accurate transcription model, with a
+     vocabulary hint so pool-shop lingo comes through right. Falls back to
+     whisper-1 (the original) if the newer model isn't available on the key. */
   const ext = String(mimeType || "").includes("webm") ? "webm" : "wav";
-  const { boundary, body } = multipart(
-    { model: "whisper-1", language: "en" },
-    { field: "file", filename: `aqua.${ext}`, contentType: mimeType || "audio/webm", data: audio }
-  );
-  const res = await httpsRequest("https://api.openai.com/v1/audio/transcriptions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": `multipart/form-data; boundary=${boundary}`,
-    },
-    body,
-    timeout: 90000,
-  });
-  return String(res.text || "").trim();
+  const prompt =
+    "Hood's Pool Service, pool, chlorine, pH, alkalinity, calcium hardness, " +
+    "cyanuric acid, stabilizer, shock, backwash, filter, skimmer, cartridge, " +
+    "salt cell, pump, gallons, Dallas, Texas, y'all, fixin' to";
+
+  const once = async (model) => {
+    const { boundary, body } = multipart(
+      { model, language: "en", prompt },
+      { field: "file", filename: `aqua.${ext}`, contentType: mimeType || "audio/webm", data: audio }
+    );
+    const res = await httpsRequest("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+      },
+      body,
+      timeout: 90000,
+    });
+    return String(res.text || "").trim();
+  };
+
+  try {
+    return await once("gpt-4o-mini-transcribe");
+  } catch (e) {
+    return await once("whisper-1");
+  }
 }
 
 /* ---------------- OpenAI speaker diarization ("who's talking?") ---------------- */

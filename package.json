@@ -42,6 +42,7 @@
       "tools.js",
       "journal.js",
       "weather.js",
+      "games.js",
       "style.css",
       "favicon.svg",
       "icons/**/*"

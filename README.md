@@ -35,7 +35,12 @@ own direct calls to OpenAI.
   snappy reply, `tts-1-hd` for a richer one): pick from 10 lifelike voices and
   preview them, and set her volume louder or softer. Falls back to Windows'
   voice offline.
-- 🎤 **Voice in** — she hears you with **OpenAI Whisper**.
+- 🎤 **Voice in** — she hears you with OpenAI's newer, more accurate
+  transcription model (`gpt-4o-mini-transcribe`), tuned to pool-shop lingo,
+  with the original Whisper as an automatic fallback.
+- 🎮 **Tic-tac-toe** — play a round right in the chat while you talk. Tap the
+  board or just say "top left" / "center" / "B2"; she plays back with a little
+  Texas sass and keeps score. Try `/game` (or `/game hard`).
 - 👥 **She knows who's talking** — enroll up to 4 people in the 👥 People panel
   (a few seconds of each voice) and Aqua matches who's at the mic with OpenAI's
   speaker-diarization model. She greets each person by name and keeps
@@ -137,6 +142,8 @@ using her built-in local brain, speaking with Windows' built-in voice.
 | `/journal` | Open her daily journal |
 | `/people` | Enroll voices so she knows who's talking |
 | `/whoami` | See who she thinks is on the mic |
+| `/game` | Play tic-tac-toe (tap the board or say your move) |
+| `/move top left` | Make a move — top left, center, B2, or 1-9 |
 | `/remind in 20 min …` / `/timer 5` | Reminders & timers |
 | `/brain` | See which brain she's using |
 | `/settings` | Connect her OpenAI brain |
@@ -203,6 +210,7 @@ pool.js            pool chemistry math (pure, unit-tested)
 tools.js           reminders & service jobs (pure, unit-tested)
 journal.js         her daily-journal logic (pure, unit-tested)
 weather.js         Open-Meteo forecast → pool tips (pure, unit-tested)
+games.js           tic-tac-toe logic (pure, unit-tested)
 style.css          the look
 package.json       app metadata + build config (electron-builder)
 icons/             app icons (including Windows .ico)

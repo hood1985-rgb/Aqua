@@ -159,6 +159,7 @@ require(path.join(APP, "pool.js"));       // sets globalThis.Pool (window === gl
 require(path.join(APP, "tools.js"));      // sets globalThis.Tools
 require(path.join(APP, "journal.js"));    // sets globalThis.Journal
 require(path.join(APP, "weather.js"));    // sets globalThis.Weather
+require(path.join(APP, "games.js"));      // sets globalThis.TicTacToe
 
 const appCode = fs.readFileSync(path.join(APP, "app.js"), "utf8");
 vm.runInThisContext(appCode, { filename: "app.js" });
@@ -265,6 +266,54 @@ function memoryJSON() {
   console.log("\n— volume default —");
   console.log("  mem volume:", mem3.volume);
   assert(mem3.volume === 1.2, "default volume should be persisted as 1.2 (louder)");
+
+  // tic-tac-toe — tap move + spoken move routing (fresh game per check so
+  // the AI's turn never gets in the way)
+  {
+    console.log("\n— tic-tac-toe —");
+    const boardCells = () => {
+      const scroll = getEl("chat-scroll");
+      let grid = null;
+      for (const row of scroll.children) {
+        if ((row.className || "").includes("msg")) {
+          const bubble = row.children && row.children[1];
+          if (bubble && (bubble.className || "").includes("game-bubble")) {
+            grid = bubble.children && bubble.children[1]; // title, grid, status…
+          }
+        }
+      }
+      return grid ? grid.children : [];
+    };
+
+    // tap move
+    globalThis.startGame();
+    await sleep(30);
+    globalThis.playMoveAt(4);
+    await sleep(30);
+    const cells1 = boardCells();
+    assert(cells1.length === 9, "board should have 9 cells");
+    assert(cells1[4].textContent === "X", "center square should be X after tapping");
+
+    // spoken move (fresh game = X's turn, empty board)
+    globalThis.startGame();
+    await sleep(30);
+    const beforeAqua = transcript().filter((m) => m.who === "aqua").length;
+    await globalThis.handleUserText("top left");
+    await sleep(30);
+    const after = transcript();
+    const lastMsg = after[after.length - 1];
+    assert(lastMsg.who === "user" && /top left/i.test(lastMsg.text), "spoken move should show as the user's move");
+    assert(after.filter((m) => m.who === "aqua").length === beforeAqua, "a spoken move should NOT trigger an Aqua chat reply");
+    assert(boardCells()[0].textContent === "X", "spoken 'top left' should place X in the top-left");
+
+    // command form (fresh game)
+    globalThis.startGame();
+    await sleep(30);
+    await globalThis.handleUserText("/move bottom right");
+    await sleep(30);
+    assert(boardCells()[8].textContent === "X", "/move bottom right should place X there");
+    console.log("  tap move ✓  spoken move ✓  /move command ✓");
+  }
 
   // speaker recognition — route a turn to an enrolled person's own memory
   if (SCENARIO === "local") {

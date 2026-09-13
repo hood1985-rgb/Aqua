@@ -602,3 +602,37 @@ select.field-input option { background: #07233b; color: var(--ink); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ---------- tic-tac-toe board (lives in a chat bubble) ---------- */
+.game-bubble { padding: 14px 16px; max-width: 320px; }
+.game-title {
+  font-size: 13px; font-weight: 700; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--ink-dim);
+  margin-bottom: 10px;
+}
+.ttt-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 64px);
+  grid-template-rows: repeat(3, 64px);
+  gap: 6px;
+}
+.ttt-cell {
+  font-size: 30px; font-weight: 800;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+  font-family: var(--font);
+  line-height: 1;
+}
+.ttt-cell:hover:not(:disabled) { background: rgba(255,255,255,0.1); }
+.ttt-cell:disabled { cursor: default; }
+.ttt-cell.x { color: var(--aqua); }
+.ttt-cell.o { color: #ffd27a; }
+.ttt-cell:disabled.win { background: rgba(70, 215, 255, 0.18); }
+.game-status { margin-top: 10px; font-size: 13.5px; color: var(--ink-dim); }
+.game-score { margin-top: 4px; font-size: 12px; color: var(--ink-faint); letter-spacing: 0.3px; }
+.game-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.game-actions .mini-btn { font-size: 11.5px; padding: 4px 10px; }

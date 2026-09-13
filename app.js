@@ -359,6 +359,21 @@ let wakeOn = false;
 let wakeRec = null;
 let wakeBusy = false;
 
+/* tic-tac-toe state (the board lives in a chat bubble) */
+const game = {
+  active: false,
+  board: Array(9).fill(null),
+  player: "X",
+  aqua: "O",
+  turn: "X",
+  difficulty: "medium",
+  root: null,        // the board bubble element
+  status: null,      // status line
+  scoreLine: null,   // score line
+  cells: [],         // the 9 cell buttons
+  aiTimer: null,
+};
+
 const chatScroll = $("chat-scroll");
 const input = $("input");
 const btnSend = $("btn-send");
@@ -475,6 +490,16 @@ async function handleUserText(text, whoName) {
   if (whoName) setActiveSpeaker(whoName);
   const sBrain = getSpeakerBrain();     // the person she's talking with
   const sMem = getSpeakerMemory();
+
+  // Tic-tac-toe move? (only when a game is on and the words look like a move)
+  if (game.active && !text.startsWith("/")) {
+    const moveIdx = TicTacToe.parseMove(text);
+    if (moveIdx !== null && text.split(/\s+/).length <= 4) {
+      addMessage("user", text);
+      playMoveAt(moveIdx);
+      return;
+    }
+  }
 
   Speaker.stop();           // stop talking the moment the user starts typing
   addMessage("user", text);
@@ -647,6 +672,8 @@ const HELP_TEXT = `Commands you can type anytime:
   /journal         her daily journal of your time together
   /people          enroll voices so she knows who's talking
   /whoami          who she thinks is on the mic right now
+  /game            play tic-tac-toe (tap the board or say your move)
+  /move <cell>     make a move — top left, center, B2, or 1-9
   /brain           which brain she's thinking with
   /settings        connect her OpenAI brain (API key)
   /backup          export her memory to a file
@@ -657,6 +684,7 @@ Tips:
   * Press Enter to send, Shift+Enter for a new line.
   * Tap the microphone to talk, or the headphones for hands-free.
   * Say "Hey Aqua" when the wake word is on.
+  * Play tic-tac-toe anytime — tap the board, or just say "top left".
   * Everything she learns stays on your PC.`;
 
 function handleCommand(line) {
@@ -966,6 +994,33 @@ function handleCommand(line) {
       break;
     }
 
+    case "/game":
+    case "/tictactoe":
+    case "/ttt": {
+      if (["easy", "medium", "hard"].includes(rest.toLowerCase())) {
+        startGame(rest.toLowerCase());
+        out.reply = `New game — ${rest.toLowerCase()} difficulty. You're X, boss.`;
+      } else if (rest.toLowerCase() === "reset") {
+        mem.data.gameScore = { player: 0, aqua: 0, tie: 0 };
+        mem.save();
+        out.reply = "Score wiped — fresh slate.";
+        if (game.root) renderGameBoard();
+      } else {
+        startGame();
+        out.reply = "Game on — you're X. Make your move.";
+      }
+      break;
+    }
+
+    case "/move": {
+      const idx = TicTacToe.parseMove(rest);
+      if (idx === null) { out.reply = "Tell me where — try 'top left', 'center', 'B2', or a number 1-9."; break; }
+      if (!game.active) { out.reply = "No game going — /game to start one."; break; }
+      playMoveAt(idx);
+      out.reply = "";
+      break;
+    }
+
     case "/update":
       if (bridge && bridge.installUpdate) { bridge.installUpdate(); out.reply = "Installing the update…"; }
       else { out.reply = "No update waiting."; }
@@ -1047,7 +1102,7 @@ async function recordOnce() {
 
   rec.start(250);
   setupSilenceStop(stream).catch(() => {});          // best-effort auto-stop
-  micTimer = setTimeout(() => { if (recording) stopRecordingEarly(); }, 16000);
+  micTimer = setTimeout(() => { if (recording) stopRecordingEarly(); }, 30000);
 
   await stopped;
 
@@ -1100,14 +1155,24 @@ async function setupSilenceStop(stream) {
     const buf = new Uint8Array(analyser.fftSize);
     let speechSeen = false;
     let silentMs = 0;
+    const startedAt = Date.now();
     const check = () => {
       if (!recording || !micRecorder || micRecorder.state === "inactive") { if (ctx) ctx.close(); return; }
       analyser.getByteTimeDomainData(buf);
       let sum = 0;
       for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
       const rms = Math.sqrt(sum / buf.length);
-      if (rms > 0.06) { speechSeen = true; silentMs = 0; }
-      else if (speechSeen) { silentMs += 200; if (silentMs >= 1200) { stopRecordingEarly(); ctx.close(); return; } }
+      if (rms > 0.05) { speechSeen = true; silentMs = 0; }
+      else if (speechSeen) {
+        silentMs += 200;
+        // Give a real pause (1.6s) before stopping, and never stop before
+        // ~1.2s of recording so short clips aren't clipped mid-word.
+        if (silentMs >= 1600 && Date.now() - startedAt > 1200) {
+          stopRecordingEarly();
+          ctx.close();
+          return;
+        }
+      }
       setTimeout(check, 200);
     };
     check();
@@ -1557,6 +1622,166 @@ function renderPeople() {
   }));
 }
 
+/* ---------------- tic-tac-toe ---------------- */
+function gameScore() {
+  if (!mem.data.gameScore) mem.data.gameScore = { player: 0, aqua: 0, tie: 0 };
+  return mem.data.gameScore;
+}
+
+function startGame(difficulty) {
+  if (difficulty) {
+    mem.data.gameDifficulty = difficulty;
+    mem.save();
+  }
+  game.difficulty = mem.data.gameDifficulty || "medium";
+  game.active = true;
+  game.board = Array(9).fill(null);
+  game.player = "X";
+  game.aqua = "O";
+  game.turn = "X";
+  if (game.aiTimer) { clearTimeout(game.aiTimer); game.aiTimer = null; }
+  buildGameBoard();
+  renderGameBoard();
+  if (game.root) chatScroll.appendChild(game.root);   // bring the board to the bottom
+  scrollToBottom();
+  Speaker.say("Game on. You're X, boss — make your move.");
+}
+
+function buildGameBoard() {
+  if (game.root) return;
+  game.root = document.createElement("div");
+  game.root.className = "msg aqua";
+
+  const avatar = document.createElement("div");
+  avatar.className = "bubble-avatar";
+  const img = document.createElement("img");
+  img.src = "icons/avatar.png";
+  img.alt = "Aqua";
+  avatar.appendChild(img);
+
+  const bubble = document.createElement("div");
+  bubble.className = "bubble game-bubble";
+
+  const title = document.createElement("div");
+  title.className = "game-title";
+  title.textContent = "Tic-tac-toe";
+  bubble.appendChild(title);
+
+  const grid = document.createElement("div");
+  grid.className = "ttt-grid";
+  game.cells = [];
+  for (let i = 0; i < 9; i++) {
+    const cell = document.createElement("button");
+    cell.className = "ttt-cell";
+    cell.dataset.i = String(i);
+    cell.addEventListener("click", () => playMoveAt(i));
+    grid.appendChild(cell);
+    game.cells.push(cell);
+  }
+  bubble.appendChild(grid);
+
+  game.status = document.createElement("div");
+  game.status.className = "game-status";
+  bubble.appendChild(game.status);
+
+  game.scoreLine = document.createElement("div");
+  game.scoreLine.className = "game-score";
+  bubble.appendChild(game.scoreLine);
+
+  const actions = document.createElement("div");
+  actions.className = "game-actions";
+  const newBtn = document.createElement("button");
+  newBtn.className = "mini-btn";
+  newBtn.textContent = "New game";
+  newBtn.addEventListener("click", () => startGame());
+  actions.appendChild(newBtn);
+  for (const d of ["easy", "medium", "hard"]) {
+    const b = document.createElement("button");
+    b.className = "mini-btn";
+    b.textContent = d.charAt(0).toUpperCase() + d.slice(1);
+    b.addEventListener("click", () => startGame(d));
+    actions.appendChild(b);
+  }
+  bubble.appendChild(actions);
+
+  game.root.appendChild(avatar);
+  game.root.appendChild(bubble);
+  chatScroll.appendChild(game.root);
+}
+
+function renderGameBoard() {
+  if (!game.root) return;
+  const w = TicTacToe.winner(game.board);
+  const myTurn = game.turn === game.player;
+  for (let i = 0; i < 9; i++) {
+    const cell = game.cells[i];
+    if (!cell) continue;
+    cell.textContent = game.board[i] || "";
+    cell.classList.toggle("x", game.board[i] === "X");
+    cell.classList.toggle("o", game.board[i] === "O");
+    cell.disabled = !!game.board[i] || !game.active || !myTurn;
+  }
+  let statusText;
+  if (w === game.player) statusText = "You win, boss! 🎉";
+  else if (w === game.aqua) statusText = "I win — run it back, darlin'?";
+  else if (TicTacToe.isFull(game.board)) statusText = "Cat's game. Dead even.";
+  else statusText = myTurn ? "Your move, boss." : "My turn… hold your horses.";
+  game.status.textContent = statusText;
+
+  const s = gameScore();
+  game.scoreLine.textContent = `You ${s.player} · Aqua ${s.aqua} · Ties ${s.tie}`;
+}
+
+function playMoveAt(i) {
+  if (!game.active || game.turn !== game.player) return;
+  if (game.board[i]) return;
+  game.board[i] = game.player;
+  game.turn = game.aqua;
+  renderGameBoard();
+
+  const w = TicTacToe.winner(game.board);
+  if (w) { endGame(w); return; }
+  if (TicTacToe.isFull(game.board)) { endGame(null); return; }
+
+  game.aiTimer = setTimeout(aiMove, 450 + Math.random() * 350);
+}
+
+function aiMove() {
+  if (!game.active || game.turn !== game.aqua) return;
+  const i = TicTacToe.bestMove(game.board, game.aqua, game.difficulty);
+  if (i < 0) return;
+  game.board[i] = game.aqua;
+  game.turn = game.player;
+  renderGameBoard();
+
+  const w = TicTacToe.winner(game.board);
+  if (w) { endGame(w); return; }
+  if (TicTacToe.isFull(game.board)) { endGame(null); return; }
+}
+
+function endGame(w) {
+  game.active = false;
+  const s = gameScore();
+  if (w === game.player) {
+    s.player++;
+    gameComment(["Well damn — you got me, boss.", "Ha! Okay, you earned that one.", "Alright, that one's yours. Don't get used to it."]);
+  } else if (w === game.aqua) {
+    s.aqua++;
+    gameComment(["That's three in a row, darlin' — run it back?", "Read you like a pump schedule, boss.", "Hah! Better luck next round."]);
+  } else {
+    s.tie++;
+    gameComment(["Cat's game. We're too evenly matched.", "A tie? Neither of us blinked.", "Dead even. Rematch?"]);
+  }
+  mem.save();
+  renderGameBoard();
+}
+
+function gameComment(lines) {
+  const line = lines[Math.floor(Math.random() * lines.length)];
+  addMessage("aqua", line);
+  Speaker.say(line);
+}
+
 /* ---------------- panels ---------------- */
 const overlay = $("overlay");
 const panel = $("panel");
@@ -1591,6 +1816,7 @@ $("btn-help").addEventListener("click", () => openPanel("help"));
 $("btn-settings").addEventListener("click", () => openPanel("settings"));
 $("btn-pool").addEventListener("click", () => openPanel("pool"));
 $("btn-journal").addEventListener("click", () => openPanel("journal"));
+$("btn-game").addEventListener("click", () => startGame());
 $("btn-people").addEventListener("click", () => openPanel("people"));
 
 const KIND_LABEL = {
@@ -1834,6 +2060,8 @@ function renderHelp() {
     ["/journal", "her daily journal"],
     ["/people", "enroll voices (she'll know who's talking)"],
     ["/whoami", "who she thinks is on the mic"],
+    ["/game", "play tic-tac-toe (tap the board or say your move)"],
+    ["/move top left", "make a move — top left, center, B2, 1-9"],
     ["/brain", "which brain she's using"],
     ["/settings", "connect her OpenAI brain"],
     ["/backup", "export her memory to a file"],
@@ -1849,6 +2077,7 @@ function renderHelp() {
       <p class="hint">• Press <b>Enter</b> to send, <b>Shift+Enter</b> for a new line.<br>
       • Tap the <b>🎤</b> to talk (she uses OpenAI Whisper to hear you).<br>
       • Say <b>“goodbye”</b> anytime to wrap up.<br>
+      • Play <b>tic-tac-toe</b>: tap the board, or just say “top left”.<br>
       • Your OpenAI key and everything she learns stay on <b>your PC</b>.</p>
     </div>`;
 }
@@ -2151,6 +2380,8 @@ async function boot() {
   mem.data.customers = mem.data.customers || [];
   mem.data.journal = mem.data.journal || [];
   mem.data.people = mem.data.people || [];
+  mem.data.gameScore = mem.data.gameScore || { player: 0, aqua: 0, tie: 0 };
+  if (!mem.data.gameDifficulty) mem.data.gameDifficulty = "medium";
   if (!mem.data.tts_model) mem.data.tts_model = "tts-1";
   if (mem.data.volume == null) mem.data.volume = 1.2;   // louder by default
 
