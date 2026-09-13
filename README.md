@@ -38,14 +38,26 @@ own direct calls to OpenAI.
 - 🎤 **Voice in** — she hears you with OpenAI's newer, more accurate
   transcription model (`gpt-4o-mini-transcribe`), tuned to pool-shop lingo,
   with the original Whisper as an automatic fallback.
-- 🎮 **Tic-tac-toe** — play a round right in the chat while you talk. Tap the
-  board or just say "top left" / "center" / "B2"; she plays back with a little
-  Texas sass and keeps score. Try `/game` (or `/game hard`).
+- 🎮 **A game side panel** — tic-tac-toe, rock-paper-scissors, guess-the-number,
+  and word guess live in their own panel *beside* the chat, so you can play
+  together while the conversation keeps flowing. Tap the tiles or just say your
+  move ("top left", "rock", "42", "letter E"). Try `/game` (or `/game hard`).
 - 👥 **She knows who's talking** — enroll up to 4 people in the 👥 People panel
   (a few seconds of each voice) and Aqua matches who's at the mic with OpenAI's
   speaker-diarization model. She greets each person by name and keeps
   **separate memories for each of you**, while the pool shop and journal stay
   the boss's. Ask `/whoami` to see who she thinks she's talking with.
+- 🔐 **Enrolled-voices-only listening** — strict mode (on by default) means the
+  mic ignores anyone she doesn't recognize. Typing always works. Toggle it with
+  `/strict off` or the checkbox in 👥 People.
+- 🧒 **Kid-safe talk** — enroll a young child with their age (or tap the 🧒 flag)
+  and she keeps it age-appropriate: kind words, simple sentences, no salt.
+- 📚 **Pop quizzes for Angela** — when she's talking with Angela, she'll
+  occasionally slip in a fun school question (math, science, language arts,
+  history, riddles) and cheer her on. Anyone can ask for one with `/quiz`.
+- 🇨🇦 **A little something for Rhonda Hood** — and only Rhonda Hood: Aqua lays on
+  a friendly Canadian flavour ("favourite colour", the odd "eh?") whenever
+  Rhonda's on the mic.
 - 😊 **A face to talk to** — she appears as an animated Navy-veteran gal up top,
   who perks up, leans in to think, and talks along with you in the chat.
 - 📔 **A daily journal** — at the end of each day she writes up what the two of
@@ -142,8 +154,14 @@ using her built-in local brain, speaking with Windows' built-in voice.
 | `/journal` | Open her daily journal |
 | `/people` | Enroll voices so she knows who's talking |
 | `/whoami` | See who she thinks is on the mic |
-| `/game` | Play tic-tac-toe (tap the board or say your move) |
-| `/move top left` | Make a move — top left, center, B2, or 1-9 |
+| `/strict on` / `/strict off` | Mic obeys ONLY enrolled voices (typing always works) |
+| `/game` | Open the game side panel (tic-tac-toe, RPS, guess, word) |
+| `/game rps` / `/game guess` / `/game word` | Jump straight to a game |
+| `/move top left` | Tic-tac-toe move — top left, center, B2, or 1-9 |
+| `/rps rock` | Throw rock, paper, or scissors |
+| `/guess 42` | Guess the number |
+| `/letter e` | Guess a letter in word guess |
+| `/quiz` | Pop quiz! math, science, words, history |
 | `/remind in 20 min …` / `/timer 5` | Reminders & timers |
 | `/brain` | See which brain she's using |
 | `/settings` | Connect her OpenAI brain |
@@ -158,8 +176,13 @@ Aqua can tell the people in your house apart by voice, using OpenAI's
 `gpt-4o-transcribe-diarize` model (same key as everything else):
 
 1. Click **👥 People** (or type `/people`).
-2. Type a name and tap **Record voice**, then talk for a few seconds.
+2. Type a name (and an age for kids — under 13 turns on kid-safe talk) and tap
+   **Record voice**, then talk for a few seconds.
 3. Do the same for anyone else (up to 4 people).
+
+With **strict listening** on (the default), the mic only obeys enrolled voices —
+strangers get a polite "I don't recognize that voice." Typing always works, and
+you can switch strict mode off anytime with `/strict off`.
 
 From then on, when someone talks into the mic she says their name and keeps
 **separate memories for each person** — facts, names, and conversation history
@@ -210,7 +233,7 @@ pool.js            pool chemistry math (pure, unit-tested)
 tools.js           reminders & service jobs (pure, unit-tested)
 journal.js         her daily-journal logic (pure, unit-tested)
 weather.js         Open-Meteo forecast → pool tips (pure, unit-tested)
-games.js           tic-tac-toe logic (pure, unit-tested)
+games.js           game logic: tic-tac-toe, RPS, guess-a-number, word guess, school quiz (pure, unit-tested)
 style.css          the look
 package.json       app metadata + build config (electron-builder)
 icons/             app icons (including Windows .ico)
@@ -220,6 +243,11 @@ tests/             self-tests (run: node tests/smoke.js, tests/*.test.js)
 
 ## Roadmap ideas
 
+- Per-person reminders and wake-up greetings ("good morning, Angela!")
+- A Spanish mode for the crew, and a Spanish pool-chemistry cheat sheet
+- Customer route planner: today's stops in the best order, with drive times
+- Voice notes straight into the journal ("Aqua, jot this down…")
+- A phone companion view for checking the job board from the truck
 - Add a real code-signing certificate so SmartScreen stays fully quiet (the
   build already signs automatically when you add `CSC_LINK` / `CSC_KEY_PASSWORD`
   as GitHub secrets)

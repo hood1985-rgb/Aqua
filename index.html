@@ -41,9 +41,25 @@
       </div>
     </header>
 
-    <main id="chat">
-      <div id="chat-scroll" aria-live="polite"></div>
-    </main>
+    <div id="main-row">
+      <main id="chat">
+        <div id="chat-scroll" aria-live="polite"></div>
+      </main>
+
+      <aside id="game-dock" class="hidden" aria-label="Game side panel">
+        <div class="dock-head">
+          <span class="dock-title">🎮 Game side</span>
+          <button class="icon-btn" id="dock-close" title="Close games">✕</button>
+        </div>
+        <div class="dock-tabs" id="dock-tabs" role="tablist">
+          <button class="dock-tab" data-gtab="ttt" title="Tic-tac-toe">❌</button>
+          <button class="dock-tab" data-gtab="rps" title="Rock-paper-scissors">✊</button>
+          <button class="dock-tab" data-gtab="guess" title="Guess the number">🔢</button>
+          <button class="dock-tab" data-gtab="word" title="Word guess">🔤</button>
+        </div>
+        <div id="dock-body"></div>
+      </aside>
+    </div>
 
     <footer id="composer">
       <button class="icon-btn" id="btn-handsfree" title="Hands-free listening">🎧</button>

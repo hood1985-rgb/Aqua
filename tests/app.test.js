@@ -81,7 +81,7 @@ globalThis.fetch = async (url) => {
 function el(tag) {
   const node = {
     tag: tag || "div", id: "", className: "", dataset: {}, style: {},
-    children: [], listeners: {}, textContent: "", innerHTML: "", value: "",
+    children: [], listeners: {}, textContent: "", value: "",
     disabled: false, title: "", src: "", alt: "", type: "", accept: "", files: null,
     scrollTop: 0, scrollHeight: 0, parentNode: null, _classes: new Set(),
     classList: {
@@ -98,6 +98,13 @@ function el(tag) {
     focus() {},
     click() { (node.listeners.click || []).forEach((f) => f({ target: node, preventDefault() {}, stopPropagation() {} })); },
   };
+  // like a real DOM node, setting innerHTML replaces the children
+  let _html = "";
+  Object.defineProperty(node, "innerHTML", {
+    get: () => _html,
+    set: (v) => { _html = String(v); node.children = []; },
+    configurable: true,
+  });
   return node;
 }
 
@@ -141,20 +148,33 @@ const bridge = {
 };
 globalThis.aqua = bridge;
 
-/* Pre-seed the boss profile with one enrolled voice so speaker recognition
+/* Pre-seed the boss profile with enrolled voices (Robert, Angela, Rhonda) so speaker recognition
    has a roster to match against. (Must happen before app.js loads `mem`.) */
 store.set("aqua.profile.v1", JSON.stringify({
   created: new Date().toISOString(),
   name: null, sessions: 0, last_seen: null,
   facts: [], asked_questions: [], qa: [], recent_exchanges: [],
   voice_on: true, voice_id: null, rate: 1.0, volume: 1.2,
-  people: [{ id: "pRobert", name: "Robert", ref: "QUJDRA==", refMime: "audio/webm" }],
+  people: [
+    { id: "pRobert", name: "Robert", ref: "QUJDRA==", refMime: "audio/webm" },
+    { id: "pAngela", name: "Angela", age: 9, ref: "QUJDRA==", refMime: "audio/webm" },
+    { id: "pRhonda", name: "Rhonda Hood", ref: "QUJDRA==", refMime: "audio/webm" },
+  ],
 }));
+
+/* Mirror index.html's initial classes (stubs start classless). */
+getEl("game-dock").classList.add("hidden");
+getEl("panel").classList.add("hidden");
+getEl("overlay").classList.add("hidden");
+getEl("modal").classList.add("hidden");
+getEl("toast").classList.add("hidden");
 
 /* ---------------- load modules as the browser would ---------------- */
 const brainMod = require(path.join(APP, "brain.js"));
 globalThis.Memory = brainMod.Memory;
 globalThis.Brain = brainMod.Brain;
+globalThis.kidSafe = brainMod.kidSafe;
+globalThis.canadianize = brainMod.canadianize;
 require(path.join(APP, "pool.js"));       // sets globalThis.Pool (window === globalThis)
 require(path.join(APP, "tools.js"));      // sets globalThis.Tools
 require(path.join(APP, "journal.js"));    // sets globalThis.Journal
@@ -270,24 +290,21 @@ function memoryJSON() {
   // tic-tac-toe — tap move + spoken move routing (fresh game per check so
   // the AI's turn never gets in the way)
   {
-    console.log("\n— tic-tac-toe —");
+    console.log("\n— tic-tac-toe (side dock) —");
+    assert(getEl("game-dock").classList.contains("hidden"), "dock starts closed");
     const boardCells = () => {
-      const scroll = getEl("chat-scroll");
-      let grid = null;
-      for (const row of scroll.children) {
-        if ((row.className || "").includes("msg")) {
-          const bubble = row.children && row.children[1];
-          if (bubble && (bubble.className || "").includes("game-bubble")) {
-            grid = bubble.children && bubble.children[1]; // title, grid, status…
-          }
-        }
-      }
-      return grid ? grid.children : [];
+      const walk = (node) => {
+        if ((node.className || "").includes("ttt-grid")) return node.children;
+        for (const c of node.children || []) { const f = walk(c); if (f) return f; }
+        return null;
+      };
+      return walk(getEl("dock-body")) || [];
     };
 
     // tap move
     globalThis.startGame();
     await sleep(30);
+    assert(!getEl("game-dock").classList.contains("hidden"), "dock opens with the game");
     globalThis.playMoveAt(4);
     await sleep(30);
     const cells1 = boardCells();
@@ -333,6 +350,59 @@ function memoryJSON() {
     const who = transcript().filter((m) => m.who === "aqua").slice(-1)[0];
     assert(/Robert/.test(who.text), "/whoami should name Robert");
     console.log("  /whoami reply:", who.text);
+
+    // unknown voice clears the chip back to the boss (no sticky speaker)
+    await globalThis.handleUserText("hi again", null);
+    await sleep(90);
+    assert(getEl("speaker-chip").textContent === "the boss", "null speaker clears the chip");
+    console.log("  sticky-chip fix ✓");
+
+    // strict listening defaults on
+    assert(memoryJSON().strict_voices === true, "strict voices should default on");
+    console.log("  strict voices default: on ✓");
+
+    // rock-paper-scissors in the dock
+    globalThis.openDock("rps");
+    globalThis.playRps("rock");
+    await sleep(30);
+    const rps = memoryJSON().rpsScore;
+    assert(rps && (rps.player + rps.aqua + rps.tie) === 1, "rps score should record one round");
+    console.log("  rps score:", JSON.stringify(rps));
+
+    // guess-the-number via a spoken number while its tab is up
+    globalThis.startGuessGame();
+    await sleep(30);
+    await globalThis.handleUserText("50");
+    await sleep(30);
+    const lastU = transcript().filter((m) => m.who === "user").slice(-1)[0];
+    assert(/50/.test(lastU.text), "spoken guess should show as the user's message");
+    console.log("  spoken guess routed ✓");
+
+    // word guess via /letter
+    globalThis.startWordGame();
+    await sleep(20);
+    await globalThis.handleUserText("/letter e");
+    await sleep(30);
+    console.log("  /letter routed ✓");
+
+    // Angela's pop quiz + kid-safe chip
+    await globalThis.handleUserText("/quiz", "Angela");
+    await sleep(60);
+    assert(getEl("speaker-chip").textContent === "with Angela", "chip should show Angela");
+    const quizQ = transcript().filter((m) => m.who === "aqua").slice(-1)[0];
+    assert(/pop quiz/i.test(quizQ.text) && /reply with your answer/i.test(quizQ.text), "quiz question should be asked");
+    console.log("  quiz asked:", quizQ.text.slice(0, 80));
+    await globalThis.handleUserText("banana pancakes", "Angela");
+    await sleep(60);
+    const verdict = transcript().filter((m) => m.who === "aqua").slice(-1)[0];
+    assert(/right|good try|almost|nice effort/i.test(verdict.text), "quiz verdict should be given");
+    console.log("  quiz verdict:", verdict.text.slice(0, 80));
+
+    // Rhonda Hood gets her own chip (and her Canadian flavour)
+    await globalThis.handleUserText("hello there", "Rhonda Hood");
+    await sleep(90);
+    assert(getEl("speaker-chip").textContent === "with Rhonda Hood", "chip should show Rhonda Hood");
+    console.log("  Rhonda Hood chip ✓");
   }
 
   if (SCENARIO === "openai") {

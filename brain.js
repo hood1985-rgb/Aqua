@@ -785,16 +785,20 @@ class Brain {
     return EXIT_RE.test(String(text || "").toLowerCase());
   }
 
-  systemPrompt() {
-    /* The persona prompt used when OpenAI is doing the talking. */
+  systemPrompt(audience) {
+    /* The persona prompt used when OpenAI is doing the talking.
+       `audience` is optional: { child: bool, rhonda: bool } — it tailors
+       how she talks without changing who she is. */
     const name = this.mem.name;
     const nameHint = name ? `\nThe user's name is ${name}. Use it naturally.` : "";
-    return (
+    let prompt =
       PERSONA +
       "\n\nWHAT YOU ALREADY KNOW ABOUT THEM:\n" +
       (this.mem.summary() || "- Nothing yet — you're just meeting them.") +
-      nameHint
-    );
+      nameHint;
+    if (audience && audience.child) prompt += "\n\n" + CHILD_PROMPT;
+    if (audience && audience.rhonda) prompt += "\n\n" + RHONDA_PROMPT;
+    return prompt;
   }
 
   /* ---- internals ---- */
@@ -946,7 +950,81 @@ class Brain {
   }
 }
 
+/* ============================================================
+   Audience modes — who she's talking with changes how she talks.
+   Pure functions so they're unit-testable.
+   ============================================================ */
+
+/* Extra system-prompt lines when she's talking with a young child. */
+const CHILD_PROMPT = `IMPORTANT — YOU ARE TALKING WITH A YOUNG CHILD:
+- Keep everything age-appropriate: kind words, simple sentences, no cursing or salty language at all.
+- No scary, violent, romantic, or grown-up topics. If they wander somewhere not-for-kids, gently steer back.
+- Be warm, patient, and encouraging — celebrate trying, not just right answers.
+- Never ask for personal details (address, school name, passwords, photos).
+- Short replies: 1-2 sentences, easy words.`;
+
+/* Extra system-prompt lines when she's talking with Rhonda Hood. */
+const RHONDA_PROMPT = `YOU ARE TALKING WITH Rhonda Hood — AND ONLY Rhonda Hood GETS THIS:
+- Adopt a friendly, playful Canadian flavour in your wording: Canadian spellings (colour, favour, neighbour, centre), the occasional "eh?" at the end of a sentence, a warm "sorry!" when you flub something.
+- Keep it light and charming — a sprinkle, not a caricature. Never mock Canadians.
+- This accent is ONLY for Rhonda Hood. With anyone else, stay your Texas self.`;
+
+/* Soft replacements so a reply is safe for young ears. */
+const KID_SWAPS = [
+  [/\bshit\b/gi, "shoot"],
+  [/\bshitty\b/gi, "crummy"],
+  [/\bdamn\b/gi, "darn"],
+  [/\bdammit\b/gi, "darn it"],
+  [/\bhell\b/gi, "heck"],
+  [/\bpissed\b/gi, "upset"],
+  [/\bass\b/gi, "butt"],
+  [/\bbitch\b/gi, "meanie"],
+  [/\bbastard\b/gi, "rascal"],
+  [/\bslut\b/gi, "person"],
+  [/\bcrap\b/gi, "crud"],
+  [/\bfuck\w*\b/gi, "fudge"],
+];
+
+function kidSafe(text) {
+  let out = String(text || "");
+  for (const [re, swap] of KID_SWAPS) {
+    out = out.replace(re, (m) =>
+      m[0] === m[0].toUpperCase() ? swap[0].toUpperCase() + swap.slice(1) : swap);
+  }
+  return out;
+}
+
+/* Light Canadian flavour for Rhonda Hood (wording only — the voice
+   itself can't carry an accent). Deterministic; the caller decides
+   how often to add the "eh?". */
+const CANUCK_SWAPS = [
+  [/\bcolor\b/gi, "colour"],
+  [/\bcolors\b/gi, "colours"],
+  [/\bfavor\b/gi, "favour"],
+  [/\bfavorite\b/gi, "favourite"],
+  [/\bneighbor\b/gi, "neighbour"],
+  [/\bneighbors\b/gi, "neighbours"],
+  [/\bcenter\b/gi, "centre"],
+  [/\bdefense\b/gi, "defence"],
+  [/\borganize\b/gi, "organise"],
+  [/\by'all\b/gi, "you all"],
+  [/\bhowdy\b/gi, "hey there"],
+];
+
+function canadianize(text, addEh) {
+  let out = String(text || "");
+  for (const [re, swap] of CANUCK_SWAPS) {
+    out = out.replace(re, (m) =>
+      m[0] === m[0].toUpperCase() ? swap[0].toUpperCase() + swap.slice(1) : swap);
+  }
+  if (addEh && out && !/[eE]h\?\s*$/.test(out)) {
+    out = out.replace(/\s*$/, "") ;
+    out += out.endsWith("?") || out.endsWith("!") ? " Eh?" : ", eh?";
+  }
+  return out;
+}
+
 /* Allow unit-testing with Node. In the browser these stay global. */
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { Memory, Brain, DEFAULT_PROFILE };
+  module.exports = { Memory, Brain, DEFAULT_PROFILE, kidSafe, canadianize, CHILD_PROMPT, RHONDA_PROMPT };
 }

@@ -111,7 +111,7 @@ function updateSpeakerChip() {
 }
 
 function setActiveSpeaker(name) {
-  const p = personByName(name);
+  const p = name ? personByName(name) : null;
   activePersonId = p ? p.id : null;
   updateSpeakerChip();
   if (p && !greetedThisSession.has(p.id)) {
@@ -121,6 +121,59 @@ function setActiveSpeaker(name) {
   }
   return p || null;
 }
+
+/* ---------------- audience: kids, Rhonda, Angela ---------------- */
+function activePerson() {
+  return activePersonId ? personById(activePersonId) : null;
+}
+
+/* Kid-safe when flagged as a kid, or enrolled with an age under 13. */
+function isChildSpeaker() {
+  const p = activePerson();
+  if (!p) return false;
+  if (p.kid === true) return true;
+  const age = Number(p.age);
+  return Number.isFinite(age) && age > 0 && age < 13;
+}
+
+/* Rhonda Hood — and ONLY Rhonda Hood — gets the Canadian flavour. */
+function isRhonda() {
+  const n = speakerName();
+  return !!n && n.trim().toLowerCase() === "rhonda hood";
+}
+
+function isAngela() {
+  const n = speakerName();
+  return !!n && n.trim().toLowerCase() === "angela";
+}
+
+function audience() {
+  return { child: isChildSpeaker(), rhonda: isRhonda() };
+}
+
+/* Rewrite a conversational reply for who's listening. Never applied to
+   command output (code samples must stay exact). */
+function forAudience(text) {
+  let out = String(text ?? "");
+  try {
+    if (isChildSpeaker() && typeof kidSafe === "function") out = kidSafe(out);
+    if (isRhonda() && typeof canadianize === "function") out = canadianize(out, Math.random() < 0.4);
+  } catch (e) { /* audience flavour is best-effort */ }
+  return out;
+}
+
+function sayForAudience(text) {
+  Speaker.say(forAudience(text));
+}
+
+/* Strict voice mode: the mic only obeys enrolled voices. Typing always works. */
+function strictVoices() {
+  return mem.data.strict_voices !== false;
+}
+
+const STRANGER_VOICE_MSG =
+  "Hmm — I don't recognize that voice, and I'm set to only listen to enrolled voices. " +
+  "You can still type to me, or add the voice in 👥 People.";
 
 /* ---------------- her voice (speaking) ---------------- */
 const OPENAI_VOICES = [
@@ -359,7 +412,9 @@ let wakeOn = false;
 let wakeRec = null;
 let wakeBusy = false;
 
-/* tic-tac-toe state (the board lives in a chat bubble) */
+/* side games state (the games live in the dock beside the chat) */
+const dock = { tab: "ttt" };   // ttt | rps | guess | word
+
 const game = {
   active: false,
   board: Array(9).fill(null),
@@ -367,12 +422,20 @@ const game = {
   aqua: "O",
   turn: "X",
   difficulty: "medium",
-  root: null,        // the board bubble element
+  root: null,        // the board container in the dock
   status: null,      // status line
   scoreLine: null,   // score line
   cells: [],         // the 9 cell buttons
   aiTimer: null,
 };
+
+const guessGame = { active: false, state: null };  // Guess the number
+const wordGame = { active: false, state: null };   // Word guess (hangman-lite)
+
+/* Angela's pop quizzes (conversational — she answers in chat) */
+let pendingQuiz = null;       // { id, subject, q, answers[] }
+let quizCooldown = 0;         // conversational turns until she may quiz again
+let recentQuizIds = [];
 
 const chatScroll = $("chat-scroll");
 const input = $("input");
@@ -487,17 +550,61 @@ function send() {
 async function handleUserText(text, whoName) {
   text = (text || "").trim();
   if (!text) return;
-  if (whoName) setActiveSpeaker(whoName);
+  // Voice turns always name (or clear) the speaker; typed turns keep whoever's on.
+  if (whoName !== undefined) setActiveSpeaker(whoName || null);
   const sBrain = getSpeakerBrain();     // the person she's talking with
   const sMem = getSpeakerMemory();
 
-  // Tic-tac-toe move? (only when a game is on and the words look like a move)
-  if (game.active && !text.startsWith("/")) {
-    const moveIdx = TicTacToe.parseMove(text);
-    if (moveIdx !== null && text.split(/\s+/).length <= 4) {
-      addMessage("user", text);
-      playMoveAt(moveIdx);
+  // A pending pop quiz eats the next conversational turn (commands pass through).
+  if (pendingQuiz && !text.startsWith("/")) {
+    if (/^(never ?mind|skip( (it|that|the quiz))?|stop|no quiz|not now)\.?$/i.test(text)) {
+      pendingQuiz = null;
+      quizCooldown = 4;
+    } else {
+      answerQuiz(text);
       return;
+    }
+  }
+
+  // Spoken game move? Talk to whichever game is on screen (or the active one).
+  if (!text.startsWith("/")) {
+    const words = text.split(/\s+/).length;
+    const gtab = dockOpen() ? dock.tab
+      : game.active ? "ttt"
+      : guessGame.active ? "guess"
+      : wordGame.active ? "word" : null;
+    if (gtab === "ttt" && game.active && words <= 4) {
+      const moveIdx = TicTacToe.parseMove(text);
+      if (moveIdx !== null) {
+        addMessage("user", text);
+        openDock("ttt");
+        playMoveAt(moveIdx);
+        return;
+      }
+    } else if (gtab === "guess" && guessGame.active && words <= 4) {
+      const n = GuessNumber.parse(text);
+      if (n !== null) {
+        addMessage("user", text);
+        openDock("guess");
+        playGuess(n);
+        return;
+      }
+    } else if (gtab === "word" && wordGame.active && words <= 2) {
+      const ch = Hangman.parse(text);
+      if (ch !== null) {
+        addMessage("user", text);
+        openDock("word");
+        playLetter(ch);
+        return;
+      }
+    } else if (gtab === "rps" && words === 1) {
+      const mv = RPS.parse(text);
+      if (mv) {
+        addMessage("user", text);
+        openDock("rps");
+        playRps(mv);
+        return;
+      }
     }
   }
 
@@ -523,7 +630,7 @@ async function handleUserText(text, whoName) {
       if (reply) addMessage("aqua", reply);
     } else if (sBrain.isExit(text)) {
       hideTyping();
-      reply = sBrain.farewell();
+      reply = forAudience(sBrain.farewell());
       sMem.addExchange(text, reply);
       sMem.save();
       Speaker.say(reply);
@@ -542,7 +649,7 @@ async function handleUserText(text, whoName) {
           updateBrainStatus();
         }
         toast("OpenAI hiccup — I'll use my built-in brain this once.");
-        reply = sBrain.respond(text);
+        reply = forAudience(sBrain.respond(text));
         sMem.addExchange(text, reply);
         sMem.save();
         Speaker.say(reply);
@@ -550,7 +657,7 @@ async function handleUserText(text, whoName) {
       }
     } else {
       hideTyping();
-      reply = sBrain.respond(text);
+      reply = forAudience(sBrain.respond(text));
       sMem.addExchange(text, reply);
       sMem.save();
       Speaker.say(reply);
@@ -565,6 +672,13 @@ async function handleUserText(text, whoName) {
 
   if (reply) logDayExchange(text, reply);
 
+  // Angela's occasional pop quiz (conversational turns only, never goodbyes).
+  if (quizCooldown > 0) quizCooldown -= 1;
+  if (!text.startsWith("/") && action !== "quit" && isAngela() &&
+      !pendingQuiz && quizCooldown <= 0 && reply && Math.random() < 0.35) {
+    askQuiz();
+  }
+
   if (action) handleAction(action);
   busy = false;
   setSendDisabled(false);
@@ -577,7 +691,7 @@ function streamSmartReply(text) {
   return new Promise((resolve, reject) => {
     const sBrain = getSpeakerBrain();
     const sMem = getSpeakerMemory();
-    const messages = [{ role: "system", content: sBrain.systemPrompt() }]
+    const messages = [{ role: "system", content: sBrain.systemPrompt(audience()) }]
       .concat(sMem.historyForLLM())
       .concat([{ role: "user", content: text }]);
 
@@ -594,7 +708,7 @@ function streamSmartReply(text) {
       sentenceBuf = finalize ? "" : (parts[parts.length - 1] || "");
       for (const s of complete) {
         const t = s.trim();
-        if (t) { Speaker.say(t); spoke = true; }
+        if (t) { sayForAudience(t); spoke = true; }
       }
     };
 
@@ -611,13 +725,13 @@ function streamSmartReply(text) {
     bridge.chat({ messages, model: smart.model, stream: true })
       .then((res) => {
         if (off) off();
-        const final = (res && res.reply) ? res.reply : acc;
+        const final = forAudience((res && res.reply) ? res.reply : acc);
         bubble.textContent = final || "Hmm, my brain came back empty. Try me again?";
         scrollToBottom();
         // Speak only what's left: the buffered tail we haven't said yet. If no
         // chunks came through at all (sentenceBuf empty), say the whole reply.
         const leftover = (sentenceBuf.trim() || (!spoke ? final : "")).trim();
-        if (leftover) { Speaker.say(leftover); spoke = true; }
+        if (leftover) { sayForAudience(leftover); spoke = true; }
         resolve(final || "");
       })
       .catch((err) => {
@@ -672,8 +786,14 @@ const HELP_TEXT = `Commands you can type anytime:
   /journal         her daily journal of your time together
   /people          enroll voices so she knows who's talking
   /whoami          who she thinks is on the mic right now
-  /game            play tic-tac-toe (tap the board or say your move)
-  /move <cell>     make a move — top left, center, B2, or 1-9
+  /strict on|off   mic obeys ONLY enrolled voices (typing always works)
+  /game            open the game side panel (separate from chat)
+  /game rps|guess|word  jump straight to a game
+  /move <cell>     tic-tac-toe move — top left, center, B2, or 1-9
+  /rps <rock|paper|scissors>  throw a round
+  /guess <number>  guess the number (starts a game if needed)
+  /letter <x>      guess a letter in word guess
+  /quiz            pop quiz me! math, science, words, history
   /brain           which brain she's thinking with
   /settings        connect her OpenAI brain (API key)
   /backup          export her memory to a file
@@ -684,7 +804,8 @@ Tips:
   * Press Enter to send, Shift+Enter for a new line.
   * Tap the microphone to talk, or the headphones for hands-free.
   * Say "Hey Aqua" when the wake word is on.
-  * Play tic-tac-toe anytime — tap the board, or just say "top left".
+  * Play on the game side (🎮) — tic-tac-toe, rock-paper-scissors,
+    guess-the-number, and word guess. Say your move while you chat.
   * Everything she learns stays on your PC.`;
 
 function handleCommand(line) {
@@ -994,20 +1115,47 @@ function handleCommand(line) {
       break;
     }
 
+    case "/strict": {
+      if (rest.toLowerCase() === "on" || rest.toLowerCase() === "off") {
+        const on = rest.toLowerCase() === "on";
+        mem.data.strict_voices = on;
+        mem.save();
+        out.reply = on
+          ? "Strict listening is on — the mic only obeys enrolled voices. Typing still always works."
+          : "Strict listening is off — I'll answer any voice on the mic.";
+      } else {
+        out.reply = `Strict listening is ${strictVoices() ? "on" : "off"}. Usage: /strict on|off`;
+      }
+      break;
+    }
+
     case "/game":
     case "/tictactoe":
     case "/ttt": {
-      if (["easy", "medium", "hard"].includes(rest.toLowerCase())) {
-        startGame(rest.toLowerCase());
-        out.reply = `New game — ${rest.toLowerCase()} difficulty. You're X, boss.`;
-      } else if (rest.toLowerCase() === "reset") {
+      const arg = rest.toLowerCase();
+      if (["easy", "medium", "hard"].includes(arg)) {
+        startGame(arg);
+        out.reply = `New game — ${arg} difficulty. You're X, boss.`;
+      } else if (arg === "reset") {
         mem.data.gameScore = { player: 0, aqua: 0, tie: 0 };
         mem.save();
         out.reply = "Score wiped — fresh slate.";
-        if (game.root) renderGameBoard();
+        if (dock.tab === "ttt") renderDock();
+      } else if (["rps", "rock", "paper", "scissors"].includes(arg)) {
+        openDock("rps");
+        out.reply = "Rock-paper-scissors is up on the game side — tap your throw, or /rps rock.";
+      } else if (["guess", "number", "guess the number"].includes(arg)) {
+        if (!guessGame.active) startGuessGame();
+        else openDock("guess");
+        out.reply = "Guess-the-number is up on the game side — I'm thinking of a number 1 to 100.";
+      } else if (["word", "hangman", "word guess"].includes(arg)) {
+        if (!wordGame.active) startWordGame();
+        else openDock("word");
+        out.reply = "Word guess is up on the game side — guess letters one at a time.";
       } else {
-        startGame();
-        out.reply = "Game on — you're X. Make your move.";
+        if (!game.active) startGame();
+        else openDock("ttt");
+        out.reply = "The game side is open — tic-tac-toe, rock-paper-scissors, guess-the-number, and word guess.";
       }
       break;
     }
@@ -1016,7 +1164,43 @@ function handleCommand(line) {
       const idx = TicTacToe.parseMove(rest);
       if (idx === null) { out.reply = "Tell me where — try 'top left', 'center', 'B2', or a number 1-9."; break; }
       if (!game.active) { out.reply = "No game going — /game to start one."; break; }
+      openDock("ttt");
       playMoveAt(idx);
+      out.reply = "";
+      break;
+    }
+
+    case "/rps": {
+      const mv = RPS.parse(rest);
+      if (!mv) { out.reply = "Throw one: /rps rock, /rps paper, or /rps scissors."; break; }
+      openDock("rps");
+      playRps(mv);
+      out.reply = "";
+      break;
+    }
+
+    case "/guess": {
+      const n = GuessNumber.parse(rest);
+      if (n === null) { out.reply = "Give me a number — /guess 42."; break; }
+      if (!guessGame.active) startGuessGame();
+      else openDock("guess");
+      playGuess(n);
+      out.reply = "";
+      break;
+    }
+
+    case "/letter": {
+      const ch = Hangman.parse(rest);
+      if (!ch) { out.reply = "Guess one letter — /letter e."; break; }
+      if (!wordGame.active) startWordGame();
+      else openDock("word");
+      playLetter(ch);
+      out.reply = "";
+      break;
+    }
+
+    case "/quiz": {
+      askQuiz(true);
       out.reply = "";
       break;
     }
@@ -1120,8 +1304,24 @@ async function recordOnce() {
     // If people are enrolled, ask OpenAI who's talking (and transcribe in one go).
     const people = roster().filter((p) => p && p.name && p.ref);
     if (people.length && bridge.identifySpeaker) {
-      const res = await bridge.identifySpeaker(audio, mime, people);
-      if (res.text) return { text: res.text, speaker: res.speaker };
+      let res;
+      try {
+        res = await bridge.identifySpeaker(audio, mime, people);
+      } catch (e) {
+        console.error(e);
+        // Speaker matching hiccup — in strict mode we can't verify who's
+        // talking, so we don't act on it. Otherwise fall back to plain words.
+        if (strictVoices()) {
+          return { message: "I couldn't verify who's talking just now — try again, or type to me.", gated: true };
+        }
+        const fb = await bridge.transcribe(audio, mime);
+        if (fb.text) return { text: fb.text };
+        return { message: "I didn't catch that — try again, or just type." };
+      }
+      if (res.text) {
+        if (!res.speaker && strictVoices()) return { message: STRANGER_VOICE_MSG, gated: true };
+        return { text: res.text, speaker: res.speaker };
+      }
       return { message: "I didn't catch that — try again, or just type." };
     }
     const res = await bridge.transcribe(audio, mime);
@@ -1129,11 +1329,6 @@ async function recordOnce() {
     return { message: "I didn't catch that — try again, or just type." };
   } catch (e) {
     console.error(e);
-    // Speaker matching hiccup — fall back to plain transcription so she still hears words.
-    try {
-      const res = await bridge.transcribe(audio, mime);
-      if (res.text) return { text: res.text };
-    } catch (e2) { /* fall through */ }
     return { message: "Couldn't transcribe — check your API key and internet." };
   }
 }
@@ -1276,6 +1471,8 @@ async function handleWakeTrigger() {
     } else {
       await handleUserText(res.text, res.speaker);
     }
+  } else if (res && res.gated) {
+    toast(res.message, 4000);
   }
   wakeBusy = false;
   if (wakeOn) startWakeLoop();
@@ -1544,6 +1741,13 @@ function captureClip(seconds = 6) {
   });
 }
 
+function personKidSafe(p) {
+  if (!p) return false;
+  if (p.kid === true) return true;
+  const age = Number(p.age);
+  return Number.isFinite(age) && age > 0 && age < 13;
+}
+
 function renderPeople() {
   panelTitle.textContent = "People & voices";
   const people = roster();
@@ -1555,10 +1759,19 @@ function renderPeople() {
 
   if (!people.length) html += `<div class="hint">Nobody enrolled yet — add a voice below.</div>`;
   for (const p of people) {
+    const badges = [];
+    if (!p.ref) badges.push("no voice yet");
+    if (p.age) badges.push(`age ${escapeHtml(String(p.age))}`);
+    if (personKidSafe(p)) badges.push("🧒 kid-safe");
+    if (String(p.name || "").toLowerCase() === "rhonda hood") badges.push("🇨🇦");
+    if (String(p.name || "").toLowerCase() === "angela") badges.push("📚 quizzes");
     html += `
       <div class="cust-row">
         <span class="job-num">${escapeHtml(String(p.name || "?").slice(0, 1).toUpperCase())}</span>
-        <span class="cust-text"><b>${escapeHtml(p.name)}</b>${p.ref ? "" : ' <span class="hint">(no voice yet)</span>'}</span>
+        <span class="cust-text"><b>${escapeHtml(p.name)}</b>${badges.length ? ` <span class="hint">(${badges.join(" · ")})</span>` : ""}</span>
+        <input class="mini-age person-age" data-id="${escapeHtml(p.id)}" type="number" min="1" max="120"
+          placeholder="age" value="${escapeHtml(String(p.age || ""))}" title="Age — under 13 turns on kid-safe talk">
+        <button class="mini-btn person-kid${p.kid ? " on" : ""}" data-id="${escapeHtml(p.id)}" title="Toggle kid-safe talk">🧒</button>
         <button class="mini-btn person-rerecord" data-id="${escapeHtml(p.id)}" title="Re-record voice">🎙️</button>
         <button class="mini-btn person-del" data-id="${escapeHtml(p.id)}" title="Remove">✕</button>
       </div>`;
@@ -1566,18 +1779,35 @@ function renderPeople() {
 
   html += `</div>
     <div class="panel-section">
+      <h3>Listening</h3>
+      <label style="display:flex;align-items:center;gap:8px;font-size:14px;">
+        <input type="checkbox" id="strict-voices" ${strictVoices() ? "checked" : ""} style="accent-color:#46d7ff;width:16px;height:16px;">
+        Only listen to enrolled voices
+      </label>
+      <p class="hint" style="margin-top:8px;">When on, the mic ignores anyone she doesn't recognize. Typing always works. (/strict on|off)</p>
+    </div>
+    <div class="panel-section">
       <h3>Add someone</h3>
       <div style="display:flex;gap:8px;">
         <input id="person-name" class="field-input" placeholder="Name, e.g. Robert">
+        <input id="person-age" class="field-input" type="number" min="1" max="120" placeholder="Age" style="max-width:80px;">
         <button id="person-record" class="btn-solid">Record voice</button>
       </div>
-      <p class="hint" id="person-status" style="margin-top:10px;">Type a name, tap <b>Record voice</b>, then talk for a few seconds.</p>
+      <p class="hint" id="person-status" style="margin-top:10px;">Type a name (and age for kids), tap <b>Record voice</b>, then talk for a few seconds.</p>
       <p class="hint" style="margin-top:6px;">The clip stays on this PC and is only sent to OpenAI to match who's speaking.</p>
     </div>`;
   panelBody.innerHTML = html;
 
   const nameInput = $("person-name");
+  const ageInput = $("person-age");
   const status = $("person-status");
+
+  const strictBox = $("strict-voices");
+  if (strictBox) strictBox.addEventListener("change", () => {
+    mem.data.strict_voices = !!strictBox.checked;
+    mem.save();
+    toast(strictBox.checked ? "Strict listening on — enrolled voices only." : "Strict listening off.");
+  });
 
   $("person-record").addEventListener("click", async () => {
     const name = nameInput.value.trim();
@@ -1595,6 +1825,8 @@ function renderPeople() {
         mem.data.people.push(person);
       }
       person.name = name;
+      const age = parseInt(ageInput.value, 10);
+      if (Number.isFinite(age) && age > 0) person.age = age;
       person.ref = arrayBufferToBase64(audio);
       person.refMime = mime;
       mem.save();
@@ -1607,9 +1839,28 @@ function renderPeople() {
     }
   });
 
+  panelBody.querySelectorAll(".person-age").forEach((inp) => inp.addEventListener("change", () => {
+    const p = personById(inp.dataset.id);
+    if (!p) return;
+    const age = parseInt(inp.value, 10);
+    if (Number.isFinite(age) && age > 0) p.age = age;
+    else delete p.age;
+    mem.save();
+    renderPeople();
+  }));
+
+  panelBody.querySelectorAll(".person-kid").forEach((b) => b.addEventListener("click", () => {
+    const p = personById(b.dataset.id);
+    if (!p) return;
+    p.kid = p.kid ? undefined : true;
+    mem.save();
+    renderPeople();
+    toast(p.kid ? `Kid-safe talk on for ${p.name}.` : `Kid-safe talk off for ${p.name}.`);
+  }));
+
   panelBody.querySelectorAll(".person-rerecord").forEach((b) => b.addEventListener("click", () => {
     const p = personById(b.dataset.id);
-    if (p) { nameInput.value = p.name; $("person-record").click(); }
+    if (p) { nameInput.value = p.name; if (p.age) ageInput.value = p.age; $("person-record").click(); }
   }));
 
   panelBody.querySelectorAll(".person-del").forEach((b) => b.addEventListener("click", () => {
@@ -1622,7 +1873,51 @@ function renderPeople() {
   }));
 }
 
-/* ---------------- tic-tac-toe ---------------- */
+/* ---------------- game side dock (games live beside the chat) ---------------- */
+function dockOpen() {
+  const d = $("game-dock");
+  return !!d && !d.classList.contains("hidden");
+}
+
+function openDock(tab) {
+  if (tab) dock.tab = tab;
+  const d = $("game-dock");
+  if (d) d.classList.remove("hidden");
+  renderDock();
+}
+
+function closeDock() {
+  const d = $("game-dock");
+  if (d) d.classList.add("hidden");
+}
+
+function selectGameTab(tab) {
+  dock.tab = tab;
+  renderDock();
+}
+
+function renderDock() {
+  const tabs = $("dock-tabs");
+  if (tabs && tabs.querySelectorAll) {
+    const btns = tabs.querySelectorAll(".dock-tab");
+    if (btns && btns.forEach) btns.forEach((b) => b.classList.toggle("on", !!(b.dataset && b.dataset.gtab === dock.tab)));
+  }
+  const body = $("dock-body");
+  if (body) body.innerHTML = "";
+  if (dock.tab === "ttt") buildGameBoard();
+  else if (dock.tab === "rps") buildRpsBoard();
+  else if (dock.tab === "guess") buildGuessBoard();
+  else if (dock.tab === "word") buildWordBoard();
+}
+
+function dockTitleEl(text) {
+  const title = document.createElement("div");
+  title.className = "game-title";
+  title.textContent = text;
+  return title;
+}
+
+/* ---------------- tic-tac-toe (side dock) ---------------- */
 function gameScore() {
   if (!mem.data.gameScore) mem.data.gameScore = { player: 0, aqua: 0, tie: 0 };
   return mem.data.gameScore;
@@ -1640,32 +1935,21 @@ function startGame(difficulty) {
   game.aqua = "O";
   game.turn = "X";
   if (game.aiTimer) { clearTimeout(game.aiTimer); game.aiTimer = null; }
-  buildGameBoard();
-  renderGameBoard();
-  if (game.root) chatScroll.appendChild(game.root);   // bring the board to the bottom
+  openDock("ttt");
   scrollToBottom();
-  Speaker.say("Game on. You're X, boss — make your move.");
+  sayForAudience(isChildSpeaker()
+    ? "Game on! You're X — you go first!"
+    : "Game on. You're X, boss — make your move.");
 }
 
 function buildGameBoard() {
-  if (game.root) return;
+  const body = $("dock-body");
+  if (!body) return;
+  body.innerHTML = "";
   game.root = document.createElement("div");
-  game.root.className = "msg aqua";
+  game.root.className = "game-bubble";
 
-  const avatar = document.createElement("div");
-  avatar.className = "bubble-avatar";
-  const img = document.createElement("img");
-  img.src = "icons/avatar.png";
-  img.alt = "Aqua";
-  avatar.appendChild(img);
-
-  const bubble = document.createElement("div");
-  bubble.className = "bubble game-bubble";
-
-  const title = document.createElement("div");
-  title.className = "game-title";
-  title.textContent = "Tic-tac-toe";
-  bubble.appendChild(title);
+  game.root.appendChild(dockTitleEl("Tic-tac-toe"));
 
   const grid = document.createElement("div");
   grid.className = "ttt-grid";
@@ -1678,15 +1962,15 @@ function buildGameBoard() {
     grid.appendChild(cell);
     game.cells.push(cell);
   }
-  bubble.appendChild(grid);
+  game.root.appendChild(grid);
 
   game.status = document.createElement("div");
   game.status.className = "game-status";
-  bubble.appendChild(game.status);
+  game.root.appendChild(game.status);
 
   game.scoreLine = document.createElement("div");
   game.scoreLine.className = "game-score";
-  bubble.appendChild(game.scoreLine);
+  game.root.appendChild(game.scoreLine);
 
   const actions = document.createElement("div");
   actions.className = "game-actions";
@@ -1702,11 +1986,10 @@ function buildGameBoard() {
     b.addEventListener("click", () => startGame(d));
     actions.appendChild(b);
   }
-  bubble.appendChild(actions);
+  game.root.appendChild(actions);
 
-  game.root.appendChild(avatar);
-  game.root.appendChild(bubble);
-  chatScroll.appendChild(game.root);
+  body.appendChild(game.root);
+  renderGameBoard();
 }
 
 function renderGameBoard() {
@@ -1778,8 +2061,341 @@ function endGame(w) {
 
 function gameComment(lines) {
   const line = lines[Math.floor(Math.random() * lines.length)];
-  addMessage("aqua", line);
-  Speaker.say(line);
+  const out = forAudience(line);
+  addMessage("aqua", out);
+  Speaker.say(out);
+}
+
+/* ---------------- rock-paper-scissors (side dock) ---------------- */
+let rpsLast = "";
+
+function rpsScore() {
+  if (!mem.data.rpsScore) mem.data.rpsScore = { player: 0, aqua: 0, tie: 0 };
+  return mem.data.rpsScore;
+}
+
+function buildRpsBoard() {
+  const body = $("dock-body");
+  if (!body) return;
+  body.innerHTML = "";
+  const root = document.createElement("div");
+  root.className = "game-bubble";
+  root.appendChild(dockTitleEl("Rock-paper-scissors"));
+
+  const row = document.createElement("div");
+  row.className = "rps-row";
+  for (const mv of RPS.MOVES) {
+    const b = document.createElement("button");
+    b.className = "rps-btn";
+    b.textContent = RPS.EMOJI[mv];
+    b.title = mv;
+    b.addEventListener("click", () => playRps(mv));
+    row.appendChild(b);
+  }
+  root.appendChild(row);
+
+  const res = document.createElement("div");
+  res.className = "rps-result";
+  res.textContent = rpsLast || "Tap your throw — or just say rock, paper, or scissors.";
+  root.appendChild(res);
+
+  const s = rpsScore();
+  const score = document.createElement("div");
+  score.className = "game-score";
+  score.textContent = `You ${s.player} · Aqua ${s.aqua} · Ties ${s.tie}`;
+  root.appendChild(score);
+
+  body.appendChild(root);
+}
+
+function playRps(mv) {
+  if (!RPS.MOVES.includes(mv)) return;
+  const aqua = RPS.randomMove();
+  const res = RPS.result(mv, aqua);
+  const s = rpsScore();
+  if (res === "win") s.player++;
+  else if (res === "lose") s.aqua++;
+  else s.tie++;
+  mem.save();
+  rpsLast = res === "win"
+    ? `You threw ${RPS.EMOJI[mv]} ${mv}, I threw ${RPS.EMOJI[aqua]} ${aqua} — you win!`
+    : res === "lose"
+      ? `You threw ${RPS.EMOJI[mv]} ${mv}, I threw ${RPS.EMOJI[aqua]} ${aqua} — I win this one!`
+      : `We both threw ${RPS.EMOJI[mv]} — great minds! Tie.`;
+  if (dockOpen() && dock.tab === "rps") renderDock();
+  sayForAudience(res === "win" ? "Ha! You got me." : res === "lose" ? "I win this one!" : "A tie!");
+}
+
+/* ---------------- guess the number (side dock) ---------------- */
+let guessFeedback = "";
+
+function guessStats() {
+  if (!mem.data.guessStats) mem.data.guessStats = { wins: 0, best: null };
+  return mem.data.guessStats;
+}
+
+function startGuessGame() {
+  guessGame.active = true;
+  guessGame.state = GuessNumber.newGame(1, 100);
+  guessFeedback = "I'm thinking of a number from 1 to 100. Take a guess!";
+  openDock("guess");
+  sayForAudience("I'm thinking of a number, 1 to 100. What's your guess?");
+}
+
+function buildGuessBoard() {
+  const body = $("dock-body");
+  if (!body) return;
+  body.innerHTML = "";
+  const root = document.createElement("div");
+  root.className = "game-bubble";
+  root.appendChild(dockTitleEl("Guess the number"));
+
+  const fb = document.createElement("div");
+  fb.className = "guess-feedback";
+  fb.textContent = guessGame.active
+    ? (guessFeedback || "Take a guess!")
+    : "No game going — start one!";
+  root.appendChild(fb);
+
+  if (guessGame.active && guessGame.state) {
+    const tries = document.createElement("div");
+    tries.className = "game-score";
+    tries.textContent = `Guesses so far: ${guessGame.state.attempts}`;
+    root.appendChild(tries);
+  }
+
+  const row = document.createElement("div");
+  row.className = "guess-row";
+  const inp = document.createElement("input");
+  inp.className = "field-input";
+  inp.type = "number";
+  inp.min = "1";
+  inp.max = "100";
+  inp.placeholder = "1–100";
+  row.appendChild(inp);
+  const go = document.createElement("button");
+  go.className = "btn-solid";
+  go.textContent = "Go";
+  go.addEventListener("click", () => {
+    const n = GuessNumber.parse(inp.value);
+    if (n === null) { toast("Give me a number, darlin'."); return; }
+    playGuess(n);
+  });
+  row.appendChild(go);
+  root.appendChild(row);
+
+  const actions = document.createElement("div");
+  actions.className = "game-actions";
+  const newBtn = document.createElement("button");
+  newBtn.className = "mini-btn";
+  newBtn.textContent = "New game";
+  newBtn.addEventListener("click", startGuessGame);
+  actions.appendChild(newBtn);
+  root.appendChild(actions);
+
+  const st = guessStats();
+  const stats = document.createElement("div");
+  stats.className = "game-score";
+  stats.textContent = st.wins
+    ? `Wins: ${st.wins}${st.best ? ` · Best: ${st.best} ${st.best === 1 ? "try" : "tries"}` : ""}`
+    : "No wins yet — I believe in you.";
+  root.appendChild(stats);
+
+  body.appendChild(root);
+}
+
+function playGuess(n) {
+  if (!guessGame.active || !guessGame.state) return;
+  const st = guessGame.state;
+  const res = GuessNumber.guess(st, n);
+  if (res === "win") {
+    guessGame.active = false;
+    const stats = guessStats();
+    stats.wins += 1;
+    if (!stats.best || st.attempts < stats.best) stats.best = st.attempts;
+    mem.save();
+    guessFeedback = `${n} is right! Got it in ${st.attempts} ${st.attempts === 1 ? "try" : "tries"}.`;
+    gameComment([
+      `🎉 ${n} — that's my number! Only ${st.attempts} ${st.attempts === 1 ? "try" : "tries"}.`,
+      `🎉 You got it — ${n}! ${st.attempts} ${st.attempts === 1 ? "try" : "tries"}. Sharp!`,
+    ]);
+  } else if (res === "low") {
+    guessFeedback = `${n} is too low — go higher.`;
+    sayForAudience("Too low — go higher.");
+  } else if (res === "high") {
+    guessFeedback = `${n} is too high — go lower.`;
+    sayForAudience("Too high — go lower.");
+  }
+  if (dockOpen() && dock.tab === "guess") renderDock();
+}
+
+/* ---------------- word guess (side dock) ---------------- */
+let wordFeedback = "";
+
+function wordStats() {
+  if (!mem.data.wordStats) mem.data.wordStats = { wins: 0, losses: 0 };
+  return mem.data.wordStats;
+}
+
+function startWordGame() {
+  wordGame.active = true;
+  wordGame.state = Hangman.newGame();
+  wordFeedback = "Guess letters one at a time — 6 misses and I keep the word!";
+  openDock("word");
+  sayForAudience("New word! Guess a letter.");
+}
+
+function buildWordBoard() {
+  const body = $("dock-body");
+  if (!body) return;
+  body.innerHTML = "";
+  const root = document.createElement("div");
+  root.className = "game-bubble";
+  root.appendChild(dockTitleEl("Word guess"));
+
+  const disp = document.createElement("div");
+  disp.className = "word-display";
+  disp.textContent = wordGame.active && wordGame.state ? Hangman.display(wordGame.state) : "—";
+  root.appendChild(disp);
+
+  const fb = document.createElement("div");
+  fb.className = "guess-feedback";
+  fb.textContent = wordGame.active ? (wordFeedback || "Guess a letter!") : "No game going — start one!";
+  root.appendChild(fb);
+
+  if (wordGame.active && wordGame.state) {
+    const left = document.createElement("div");
+    left.className = "game-score";
+    left.textContent = `Misses left: ${wordGame.state.maxMisses - wordGame.state.misses}`;
+    root.appendChild(left);
+
+    const letters = document.createElement("div");
+    letters.className = "word-letters";
+    for (let c = 97; c <= 122; c++) {
+      const ch = String.fromCharCode(c);
+      const b = document.createElement("button");
+      b.className = "word-letter";
+      b.textContent = ch.toUpperCase();
+      const used = wordGame.state.guessed.includes(ch);
+      b.disabled = used || !wordGame.active;
+      if (used && wordGame.state.word.includes(ch)) b.classList.add("hit");
+      b.addEventListener("click", () => playLetter(ch));
+      letters.appendChild(b);
+    }
+    root.appendChild(letters);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "game-actions";
+  const newBtn = document.createElement("button");
+  newBtn.className = "mini-btn";
+  newBtn.textContent = "New word";
+  newBtn.addEventListener("click", startWordGame);
+  actions.appendChild(newBtn);
+  root.appendChild(actions);
+
+  const st = wordStats();
+  const stats = document.createElement("div");
+  stats.className = "game-score";
+  stats.textContent = `Words solved: ${st.wins} · Words kept: ${st.losses}`;
+  root.appendChild(stats);
+
+  body.appendChild(root);
+}
+
+function playLetter(ch) {
+  if (!wordGame.active || !wordGame.state) return;
+  const res = Hangman.guess(wordGame.state, ch);
+  if (!res) return;
+  if (res.already) {
+    wordFeedback = `Already tried ${ch.toUpperCase()} — pick another.`;
+  } else if (res.won) {
+    wordGame.active = false;
+    wordStats().wins += 1;
+    mem.save();
+    wordFeedback = `You got it — "${wordGame.state.word}"!`;
+    gameComment([
+      `🎉 You guessed my word: ${wordGame.state.word}! Brilliant.`,
+      `🎉 "${wordGame.state.word}" — that's it! You're good at this.`,
+    ]);
+  } else if (res.lost) {
+    wordGame.active = false;
+    wordStats().losses += 1;
+    mem.save();
+    wordFeedback = `Out of guesses — my word was "${wordGame.state.word}".`;
+    gameComment([
+      `Out of guesses — my word was "${wordGame.state.word}". Run it back?`,
+      `Tough one — it was "${wordGame.state.word}". New word?`,
+    ]);
+  } else if (res.correct) {
+    wordFeedback = `Nice — ${ch.toUpperCase()} is in there!`;
+    sayForAudience(`Nice, ${ch.toUpperCase()} is in there.`);
+  } else {
+    wordFeedback = `Nope — no ${ch.toUpperCase()}. ${res.missesLeft} ${res.missesLeft === 1 ? "miss" : "misses"} left.`;
+    sayForAudience(`No ${ch.toUpperCase()}. ${res.missesLeft} left.`);
+  }
+  if (dockOpen() && dock.tab === "word") renderDock();
+}
+
+/* ---------------- Angela's pop quizzes (in chat) ---------------- */
+function quizPick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function askQuiz(force) {
+  pendingQuiz = SchoolQuiz.pick(recentQuizIds);
+  recentQuizIds.push(pendingQuiz.id);
+  if (recentQuizIds.length > 12) recentQuizIds = recentQuizIds.slice(-12);
+  quizCooldown = 4;
+  mem.data.quizAsked = (mem.data.quizAsked || 0) + 1;
+  mem.save();
+  const name = speakerName();
+  const q = `📚 Pop quiz${pendingQuiz.subject ? ` (${pendingQuiz.subject})` : ""}${name ? `, ${name}` : ""}: ${pendingQuiz.q} Just reply with your answer!`;
+  const out = forAudience(q);
+  addMessage("aqua", out);
+  sayForAudience(out);
+  logDayExchange(force ? "/quiz" : "(pop quiz)", out);
+}
+
+function answerQuiz(text) {
+  Speaker.stop();
+  addMessage("user", text);
+  input.value = "";
+  autosize();
+  busy = true;
+  setSendDisabled(true);
+  const item = pendingQuiz;
+  pendingQuiz = null;
+  quizCooldown = 4;
+  const ok = SchoolQuiz.check(item, text);
+  if (ok) mem.data.quizCorrect = (mem.data.quizCorrect || 0) + 1;
+  mem.save();
+  let verdict;
+  if (ok) {
+    verdict = quizPick([
+      "That's right! You're on fire.",
+      "You got it! Smart cookie.",
+      "Nailed it! I'm proud of you.",
+      "Yes! That's exactly right.",
+    ]);
+  } else {
+    const answer = (item && item.answers && item.answers[0]) || "that one";
+    verdict = quizPick([
+      `Good try! The answer is ${answer}. You'll get the next one!`,
+      `Almost! It's ${answer}. Nice effort — let's keep going!`,
+      `Nice effort! The answer is ${answer}. You'll nail the next one!`,
+    ]);
+  }
+  verdict = forAudience(verdict);
+  const sMem = getSpeakerMemory();
+  sMem.addExchange(text, verdict);
+  sMem.save();
+  addMessage("aqua", verdict);
+  Speaker.say(verdict);
+  logDayExchange(text, verdict);
+  busy = false;
+  setSendDisabled(false);
+  if (!Speaker._speaking) setFaceState("idle");
 }
 
 /* ---------------- panels ---------------- */
@@ -1816,8 +2432,21 @@ $("btn-help").addEventListener("click", () => openPanel("help"));
 $("btn-settings").addEventListener("click", () => openPanel("settings"));
 $("btn-pool").addEventListener("click", () => openPanel("pool"));
 $("btn-journal").addEventListener("click", () => openPanel("journal"));
-$("btn-game").addEventListener("click", () => startGame());
+$("btn-game").addEventListener("click", () => {
+  if (!game.active && dock.tab === "ttt") startGame();
+  else openDock(dock.tab);
+});
 $("btn-people").addEventListener("click", () => openPanel("people"));
+$("dock-close").addEventListener("click", closeDock);
+(() => {
+  const tabs = $("dock-tabs");
+  if (tabs && tabs.querySelectorAll) {
+    const btns = tabs.querySelectorAll(".dock-tab");
+    if (btns && btns.forEach) btns.forEach((b) => b.addEventListener("click", () => {
+      if (b.dataset && b.dataset.gtab) selectGameTab(b.dataset.gtab);
+    }));
+  }
+})();
 
 const KIND_LABEL = {
   favorite: "Favorites", like: "Likes", dislike: "Dislikes", work: "Work",
@@ -2060,8 +2689,14 @@ function renderHelp() {
     ["/journal", "her daily journal"],
     ["/people", "enroll voices (she'll know who's talking)"],
     ["/whoami", "who she thinks is on the mic"],
-    ["/game", "play tic-tac-toe (tap the board or say your move)"],
-    ["/move top left", "make a move — top left, center, B2, 1-9"],
+    ["/strict on|off", "mic obeys ONLY enrolled voices"],
+    ["/game", "open the game side panel"],
+    ["/game rps", "jump to rock-paper-scissors (guess, word too)"],
+    ["/move top left", "tic-tac-toe move — top left, center, B2, 1-9"],
+    ["/rps rock", "throw rock, paper, or scissors"],
+    ["/guess 42", "guess the number"],
+    ["/letter e", "guess a letter in word guess"],
+    ["/quiz", "pop quiz! math, science, words, history"],
     ["/brain", "which brain she's using"],
     ["/settings", "connect her OpenAI brain"],
     ["/backup", "export her memory to a file"],
@@ -2077,7 +2712,7 @@ function renderHelp() {
       <p class="hint">• Press <b>Enter</b> to send, <b>Shift+Enter</b> for a new line.<br>
       • Tap the <b>🎤</b> to talk (she uses OpenAI Whisper to hear you).<br>
       • Say <b>“goodbye”</b> anytime to wrap up.<br>
-      • Play <b>tic-tac-toe</b>: tap the board, or just say “top left”.<br>
+      • Play on the <b>game side</b> (🎮): tic-tac-toe, rock-paper-scissors, guess-the-number, word guess — say your move while you chat.<br>
       • Your OpenAI key and everything she learns stay on <b>your PC</b>.</p>
     </div>`;
 }
@@ -2381,6 +3016,10 @@ async function boot() {
   mem.data.journal = mem.data.journal || [];
   mem.data.people = mem.data.people || [];
   mem.data.gameScore = mem.data.gameScore || { player: 0, aqua: 0, tie: 0 };
+  mem.data.rpsScore = mem.data.rpsScore || { player: 0, aqua: 0, tie: 0 };
+  mem.data.guessStats = mem.data.guessStats || { wins: 0, best: null };
+  mem.data.wordStats = mem.data.wordStats || { wins: 0, losses: 0 };
+  if (mem.data.strict_voices === undefined) mem.data.strict_voices = true;
   if (!mem.data.gameDifficulty) mem.data.gameDifficulty = "medium";
   if (!mem.data.tts_model) mem.data.tts_model = "tts-1";
   if (mem.data.volume == null) mem.data.volume = 1.2;   // louder by default
