@@ -440,7 +440,24 @@ async function transcribeWithDiarize(audio, mimeType, speakers, key) {
   return parseDiarized(res);
 }
 
-async function synthesizeSpeech(text, voice, speed, key, model) {
+/* Request body for OpenAI text-to-speech. `instructions` (accent + direction)
+   only exists on the gpt-4o TTS models — sending it to tts-1 would error,
+   so it's gated on the model. Pure function — exported for unit testing. */
+function buildSpeechBody({ text, voice, speed, model, instructions }) {
+  const body = {
+    model: model || "tts-1",
+    voice: voice || "nova",
+    input: text,
+    response_format: "mp3",
+    speed: Number(speed) || 1,
+  };
+  if (instructions && /gpt-4o.*tts/.test(body.model)) {
+    body.instructions = String(instructions).slice(0, 500);
+  }
+  return body;
+}
+
+async function synthesizeSpeech(text, voice, speed, key, model, instructions) {
   /* OpenAI's neural text-to-speech — far more human than the system voices. */
   return httpsRequest("https://api.openai.com/v1/audio/speech", {
     method: "POST",
@@ -448,13 +465,7 @@ async function synthesizeSpeech(text, voice, speed, key, model) {
       Authorization: `Bearer ${key}`,
       "Content-Type": "application/json",
     },
-    body: {
-      model: model || "tts-1",
-      voice: voice || "nova",
-      input: text,
-      response_format: "mp3",
-      speed: Number(speed) || 1,
-    },
+    body: buildSpeechBody({ text, voice, speed, model, instructions }),
     timeout: 60000,
     binary: true,
   });
@@ -515,10 +526,10 @@ function registerIpc() {
     return { text, speaker };
   });
 
-  ipcMain.handle("speak", async (event, { text, voice, speed, model }) => {
+  ipcMain.handle("speak", async (event, { text, voice, speed, model, instructions }) => {
     const cfg = loadConfig();
     if (!cfg.openai_api_key) throw new Error("no-key");
-    const buf = await synthesizeSpeech(text, voice, speed, cfg.openai_api_key, model);
+    const buf = await synthesizeSpeech(text, voice, speed, cfg.openai_api_key, model, instructions);
     return { audio: buf.toString("base64"), mime: "audio/mpeg" };
   });
 
@@ -628,5 +639,5 @@ app.on("window-all-closed", () => {
 
 /* Export the pure helpers for unit tests (harmless when run by Electron). */
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { extractDeltaFromSSELine, buildDiarizeMultipart, parseDiarized, sanitizePhotoName };
+  module.exports = { extractDeltaFromSSELine, buildDiarizeMultipart, parseDiarized, sanitizePhotoName, buildSpeechBody };
 }

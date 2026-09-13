@@ -412,6 +412,39 @@ function memoryJSON() {
     assert(getEl("speaker-chip").textContent === "with Rhonda Hood", "chip should show Rhonda Hood");
     console.log("  Rhonda Hood chip ✓");
 
+    // Rhonda's Canadian bit: trigger, wording, voice picking, quip, toggle
+    assert(globalThis.isRhondaName("Rhonda Hood") === true, "full name matches");
+    assert(globalThis.isRhondaName("Rhonda") === true, "first name matches");
+    assert(globalThis.isRhondaName("Robert") === false, "anyone else does not");
+    assert(globalThis.isRhonda() === true, "Rhonda still on the mic");
+    const favQ = globalThis.forAudience("What's your favorite color?");
+    assert(/favourite colour/.test(favQ), "Rhonda hears favourite/colour, got: " + favQ);
+    await globalThis.handleUserText("howdy", "Robert");
+    await sleep(60);
+    assert(globalThis.isRhonda() === false, "Robert is not Rhonda");
+    assert.strictEqual(globalThis.forAudience("What's your favorite color?"), "What's your favorite color?");
+    const fakeVoices = [
+      { name: "Microsoft Zira", lang: "en-US", voiceURI: "zira" },
+      { name: "Microsoft Richard", lang: "en-CA", voiceURI: "richard" },
+    ];
+    const picked = globalThis.pickCanadianVoice(fakeVoices);
+    assert(picked && picked.lang === "en-CA", "Canadian voice picked");
+    assert.strictEqual(globalThis.pickCanadianVoice([{ name: "Zira", lang: "en-US" }]), null, "null when none installed");
+    // switching back to Rhonda mid-day gets the hello quip (once per session)
+    await globalThis.handleUserText("hey again", "Rhonda Hood");
+    await sleep(60);
+    const recent = transcript().filter((m) => m.who === "aqua").map((m) => m.text).join("\n");
+    assert(/Good to hear you, eh\?/.test(recent), "Rhonda gets the hello quip on re-switch");
+    // the toggle kills the whole bit
+    await globalThis.handleUserText("/canadian off");
+    await sleep(60);
+    assert(globalThis.isRhonda() === false, "toggle off disables Rhonda mode");
+    assert.strictEqual(globalThis.forAudience("What's your favorite color?"), "What's your favorite color?");
+    await globalThis.handleUserText("/canadian on");
+    await sleep(60);
+    assert(globalThis.isRhonda() === true, "toggle on restores it");
+    console.log("  Rhonda's Canadian bit ✓");
+
     // connect four in the dock + spoken column
     globalThis.startCfGame();
     await sleep(30);
@@ -585,6 +618,20 @@ function memoryJSON() {
     const sentences = spoken.filter((s) => /^Well howdy|You're fixin'|Damn fine work/.test(s));
     assert(sentences.length === 3, "streamed reply should speak 3 complete sentences");
     console.log("  ✓ spoke 3 complete sentences as they arrived");
+  }
+
+  if (SCENARIO === "openai") {
+    // Rhonda's neural turns carry accent instructions on the mini-tts model
+    await globalThis.handleUserText("hi", "Rhonda Hood");
+    await sleep(80);
+    const rhondaReq = globalThis.buildSpeakRequest("hello");
+    assert(rhondaReq && rhondaReq.model === "gpt-4o-mini-tts", "Rhonda uses the instructions-capable model");
+    assert(/Canadian accent/.test(rhondaReq.instructions || ""), "Rhonda gets accent instructions");
+    await globalThis.handleUserText("hi", "Robert");
+    await sleep(80);
+    const plainReq = globalThis.buildSpeakRequest("hello");
+    assert(plainReq && plainReq.model === "tts-1" && !plainReq.instructions, "everyone else gets the plain request");
+    console.log("  Rhonda neural accent \u2713");
   }
 
   console.log(`\nALL HARNESS CHECKS PASSED (${SCENARIO}).`);

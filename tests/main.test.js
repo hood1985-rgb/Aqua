@@ -95,7 +95,7 @@ async function main() {
   console.log("[ok] key cleared");
 
   // 5) SSE streaming parser
-  const { extractDeltaFromSSELine, buildDiarizeMultipart, parseDiarized, sanitizePhotoName } = mainExports;
+  const { extractDeltaFromSSELine, buildDiarizeMultipart, parseDiarized, sanitizePhotoName, buildSpeechBody } = mainExports;
   if (extractDeltaFromSSELine('data: {"choices":[{"delta":{"content":"Hi"}}]}') !== "Hi") {
     throw new Error("SSE content delta not extracted");
   }
@@ -159,6 +159,15 @@ async function main() {
   const push = await handlers["sync:push"]({}, { tasks: [] });
   if (!push || !Array.isArray(push.ops) || push.ops.length !== 0) throw new Error("sync:push should return empty ops");
   console.log("[ok] photo names + photo/sync IPC");
+
+  // 9) speech body: instructions ride along only on gpt-4o TTS models
+  const plain = buildSpeechBody({ text: "hi", voice: "nova", speed: 1, model: "tts-1", instructions: "Be Canadian." });
+  if (plain.model !== "tts-1" || "instructions" in plain) throw new Error("tts-1 must not receive instructions");
+  const acc = buildSpeechBody({ text: "hi", voice: "nova", speed: 1, model: "gpt-4o-mini-tts", instructions: "Be Canadian." });
+  if (acc.model !== "gpt-4o-mini-tts" || acc.instructions !== "Be Canadian.") throw new Error("mini-tts should carry instructions");
+  const def = buildSpeechBody({ text: "hi" });
+  if (def.model !== "tts-1" || def.voice !== "nova" || def.speed !== 1) throw new Error("speech defaults wrong");
+  console.log("[ok] speech body builder");
 
   console.log("\nALL CHECKS PASSED - main process logic is sound.");
 }

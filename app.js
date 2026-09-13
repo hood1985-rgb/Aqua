@@ -120,7 +120,18 @@ function setActiveSpeaker(name) {
     addDivider(`now talking with ${p.name}`);
     toast(`Heard ${p.name} — hey there.`);
   }
-  if (p && changed) maybeWakeUp(p);
+  if (p && changed) {
+    const alreadyWoke = p.lastDaily === Journal.todayKey();
+    maybeWakeUp(p);
+    // Switching (back) to Rhonda mid-day gets a quick hello in the bit —
+    // once per session, and never on top of her morning greeting.
+    if (alreadyWoke && !greetedThisSession.has("rhonda-bit") && isRhonda()) {
+      greetedThisSession.add("rhonda-bit");
+      const quip = forAudience("Well hey there, Rhonda! Good to hear you, eh?");
+      addMessage("aqua", quip);
+      Speaker.say(quip);
+    }
+  }
   return p || null;
 }
 
@@ -167,10 +178,16 @@ function isChildSpeaker() {
   return Number.isFinite(age) && age > 0 && age < 13;
 }
 
-/* Rhonda Hood — and ONLY Rhonda Hood — gets the Canadian flavour. */
+/* Rhonda Hood — and ONLY Rhonda — gets the Canadian bit: the wording, the
+   accent voice, the works. First-name match so it fires whether she's
+   enrolled as "Rhonda" or "Rhonda Hood". Toggle with /canadian on|off. */
+function isRhondaName(name) {
+  const low = String(name || "").trim().toLowerCase();
+  return low === "rhonda" || low.startsWith("rhonda ");
+}
+
 function isRhonda() {
-  const n = speakerName();
-  return !!n && n.trim().toLowerCase() === "rhonda hood";
+  return mem.data.canadian !== false && isRhondaName(speakerName());
 }
 
 function isAngela() {
@@ -281,14 +298,10 @@ const Speaker = {
 
   async _speakOne(text) {
     const gen = ++this._gen;
-    if (voiceEngine() === "openai" && bridge) {
+    const req = buildSpeakRequest(text);
+    if (req) {
       try {
-        const { audio, mime } = await bridge.speak({
-          text,
-          voice: mem.data.openai_voice || "nova",
-          speed: clamp(this.rate, 0.25, 4),
-          model: mem.data.tts_model || "tts-1",
-        });
+        const { audio, mime } = await bridge.speak(req);
         if (gen !== this._gen) return;
         await playAudioFromBase64(audio, mime || "audio/mpeg");
         return;
@@ -310,10 +323,51 @@ const Speaker = {
   },
 };
 
+/* Accent direction for the neural voice. Only Rhonda gets one — delivered as
+   `instructions`, which only the gpt-4o TTS models understand, so her turns
+   go out on gpt-4o-mini-tts (same voice she picked, just... Canadian). */
+const RHONDA_TTS_MODEL = "gpt-4o-mini-tts";
+const RHONDA_TTS_INSTRUCTIONS =
+  "Speak with a warm, playful Canadian accent, like a friendly neighbour from Ontario. " +
+  "Keep it light and charming — never a caricature, never mocking.";
+
+function buildSpeakRequest(text) {
+  if (voiceEngine() !== "openai" || !bridge) return null;
+  const req = {
+    text,
+    voice: mem.data.openai_voice || "nova",
+    speed: clamp(Speaker.rate, 0.25, 4),
+  };
+  if (isRhonda()) {
+    req.model = RHONDA_TTS_MODEL;
+    req.instructions = RHONDA_TTS_INSTRUCTIONS;
+  } else {
+    req.model = mem.data.tts_model || "tts-1";
+  }
+  return req;
+}
+
 function voiceEngine() {
   // OpenAI neural voices when a key is present, unless the user picked Windows.
   if (!smart.on) return "windows";
   return mem.data.voice_engine === "windows" ? "windows" : "openai";
+}
+
+/* A real Canadian-accent system voice when one is installed (the en-CA
+   language pack). Pure pick over a voice list, so the harness can drive it. */
+function pickCanadianVoice(voices) {
+  const list = voices || [];
+  return list.find((v) => /^en[-_]ca/i.test(v.lang || "")) ||
+    list.find((v) => /canad/i.test((v.name || "") + " " + (v.voiceURI || ""))) ||
+    null;
+}
+
+function synthVoiceForAudience() {
+  if (isRhonda()) {
+    const voices = Speaker.voices && Speaker.voices.length ? Speaker.voices : Speaker.loadVoices();
+    return pickCanadianVoice(voices) || Speaker.voice;
+  }
+  return Speaker.voice;
 }
 
 function synthSpeak(text) {
@@ -321,7 +375,8 @@ function synthSpeak(text) {
     if (!Speaker.available) { resolve(); return; }
     try {
       const u = new SpeechSynthesisUtterance(text);
-      if (Speaker.voice) u.voice = Speaker.voice;
+      const vv = synthVoiceForAudience();
+      if (vv) u.voice = vv;
       u.rate = clamp(Speaker.rate, 0.5, 2);
       u.pitch = 1.0;
       u.volume = clamp(Speaker.volume, 0, 2);
@@ -916,6 +971,7 @@ const HELP_TEXT = `Commands you can type anytime:
   /people          enroll voices so she knows who's talking
   /whoami          who she thinks is on the mic right now
   /strict on|off   mic obeys ONLY enrolled voices (typing always works)
+  /canadian on|off  Rhonda's joke Canadian accent (on by default)
   /game            open the game side panel (separate from chat)
   /game chess|checkers|cf|rps|guess|word  jump straight to a game
   /move <cell>     tic-tac-toe move — top left, center, B2, or 1-9
@@ -1267,6 +1323,20 @@ function handleCommand(line) {
           : "Strict listening is off — I'll answer any voice on the mic.";
       } else {
         out.reply = `Strict listening is ${strictVoices() ? "on" : "off"}. Usage: /strict on|off`;
+      }
+      break;
+    }
+
+    case "/canadian": {
+      if (rest.toLowerCase() === "on" || rest.toLowerCase() === "off") {
+        const on = rest.toLowerCase() === "on";
+        mem.data.canadian = on;
+        mem.save();
+        out.reply = on
+          ? "The Canadian bit is on — Rhonda gets the accent, eh?"
+          : "The Canadian bit is off — I'll stay Texan for everybody.";
+      } else {
+        out.reply = `The Canadian bit is ${mem.data.canadian !== false ? "on" : "off"}. Usage: /canadian on|off`;
       }
       break;
     }
@@ -3453,6 +3523,7 @@ function renderHelp() {
     ["/people", "enroll voices (she'll know who's talking)"],
     ["/whoami", "who she thinks is on the mic"],
     ["/strict on|off", "mic obeys ONLY enrolled voices"],
+    ["/canadian on|off", "Rhonda's joke Canadian accent"],
     ["/game", "open the game side panel"],
     ["/game chess", "jump to a game (checkers, cf, rps, guess, word)"],
     ["/move top left", "tic-tac-toe move — top left, center, B2, 1-9"],

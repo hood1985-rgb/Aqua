@@ -85,9 +85,11 @@ own direct calls to OpenAI.
 - 📱 **Truck phone sync** — `/sync` (or opening 🚚) starts a PIN-guarded page on
   the home/office WiFi so the phone in the truck sees the route + jobs and can
   check things off; it all lands back on the PC.
-- 🇨🇦 **A little something for Rhonda Hood** — and only Rhonda Hood: Aqua lays on
-  a friendly Canadian flavour ("favourite colour", the odd "eh?") whenever
-  Rhonda's on the mic.
+- 🇨🇦 **A little something for Rhonda Hood** — and only Rhonda Hood: the moment
+  Rhonda's on the mic, Aqua jokingly puts on her Canadian voice — a real
+  Canadian accent (a Canadian system voice when one's installed, or a Canadian
+  lilt in her neural voice), plus the wording to match ("favourite colour",
+  the odd "eh?"). Toggle it with `/canadian on|off`.
 - 😊 **A face to talk to** — she appears as an animated Navy-veteran gal up top,
   who perks up, leans in to think, and talks along with you in the chat.
 - 📔 **A daily journal** — at the end of each day she writes up what the two of
@@ -114,8 +116,8 @@ own direct calls to OpenAI.
 
 ### Option A — download a ready-made .exe (easiest)
 
-Go to the **Releases** page of this repository and download **`Aqua-Setup-1.1.0.exe`**
-(the installer) or **`Aqua-Portable-1.1.0.exe`** (no install — just run it).
+Go to the **Releases** page of this repository and download **`Aqua-Setup-1.2.0.exe`**
+(the installer) or **`Aqua-Portable-1.2.0.exe`** (no install — just run it).
 
 - **Installer:** double-click, choose where to install, and it adds Aqua to your
   Start menu and desktop.
@@ -185,6 +187,7 @@ using her built-in local brain, speaking with Windows' built-in voice.
 | `/people` | Enroll voices so she knows who's talking |
 | `/whoami` | See who she thinks is on the mic |
 | `/strict on` / `/strict off` | Mic obeys ONLY enrolled voices (typing always works) |
+| `/canadian on` / `/canadian off` | Rhonda's joke Canadian accent (on by default) |
 | `/spanish on` / `/spanish off` | She answers en español |
 | `/pool-es` | Poolside Spanish cheat sheet |
 | `/note …` | Jot a voice-note into today's journal |

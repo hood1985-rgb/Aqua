@@ -1008,9 +1008,9 @@ function kidSafe(text) {
   return out;
 }
 
-/* Light Canadian flavour for Rhonda Hood (wording only — the voice
-   itself can't carry an accent). Deterministic; the caller decides
-   how often to add the "eh?". */
+/* Light Canadian flavour for Rhonda Hood's wording (the accent itself rides
+   along in her voice — see pickCanadianVoice / buildSpeakRequest in app.js).
+   Deterministic; the caller decides how often to add the "eh?". */
 const CANUCK_SWAPS = [
   [/\bcolor\b/gi, "colour"],
   [/\bcolors\b/gi, "colours"],

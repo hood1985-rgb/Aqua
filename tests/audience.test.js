@@ -24,6 +24,7 @@ assert.strictEqual(canadianize("Howdy, neighbor!", false), "Hey there, neighbour
 assert.ok(canadianize("Good game.", true).endsWith("eh?"), "addEh appends eh?");
 assert.ok(canadianize("Good game.", false).indexOf("eh?") === -1, "no eh without the flag");
 assert.ok(!/cheque/.test(canadianize("Check the filter.", false)), "pool talk stays intact");
+assert.strictEqual(canadianize("Great win!", true), "Great win! Eh?");
 console.log("[ok] canadianize");
 
 // ---- audience-aware system prompt ----
