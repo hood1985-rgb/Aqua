@@ -114,8 +114,8 @@ own direct calls to OpenAI.
 
 ### Option A — download a ready-made .exe (easiest)
 
-Go to the **Releases** page of this repository and download **`Aqua-Setup-1.0.0.exe`**
-(the installer) or **`Aqua-Portable-1.0.0.exe`** (no install — just run it).
+Go to the **Releases** page of this repository and download **`Aqua-Setup-1.1.0.exe`**
+(the installer) or **`Aqua-Portable-1.1.0.exe`** (no install — just run it).
 
 - **Installer:** double-click, choose where to install, and it adds Aqua to your
   Start menu and desktop.
@@ -261,6 +261,15 @@ brain still drives greetings and memory extraction — she always grows on her o
 | She doesn't speak | Tap 🔊 to check her voice is on, and check your volume. The neural voice needs your OpenAI key; without it she uses the Windows voice. |
 | OpenAI errors | Check your key, your plan/credit, and your internet connection |
 | Want a truly fresh start | `/reset` inside Aqua |
+
+## Releases & versions
+
+Aqua uses simple version numbers: **1.1.0**, **1.1.1**, and so on.
+
+- A new batch of features bumps the middle number (1.1.0 → 1.2.0).
+- A small fix bumps the last number (1.1.0 → 1.1.1).
+- Each release is published from a matching tag (`v1.1.0`), so the in-app
+  updater can tell new versions apart and offer them automatically.
 
 ## Project layout
 

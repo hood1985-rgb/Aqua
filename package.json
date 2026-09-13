@@ -1,7 +1,7 @@
 {
   "name": "aqua",
   "productName": "Aqua",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Aqua — your personal assistant and cyber-buddy with an OpenAI brain. Runs on your PC as a desktop app.",
   "main": "main.js",
   "author": "Aqua",
