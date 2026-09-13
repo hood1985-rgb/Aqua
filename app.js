@@ -112,6 +112,7 @@ function updateSpeakerChip() {
 
 function setActiveSpeaker(name) {
   const p = name ? personByName(name) : null;
+  const changed = (p ? p.id : null) !== activePersonId;
   activePersonId = p ? p.id : null;
   updateSpeakerChip();
   if (p && !greetedThisSession.has(p.id)) {
@@ -119,7 +120,37 @@ function setActiveSpeaker(name) {
     addDivider(`now talking with ${p.name}`);
     toast(`Heard ${p.name} — hey there.`);
   }
+  if (p && changed) maybeWakeUp(p);
   return p || null;
+}
+
+function daypart() {
+  const h = new Date().getHours();
+  return h >= 5 && h < 12 ? "morning" : h >= 12 && h < 17 ? "afternoon" : "evening";
+}
+
+/* First time she hears someone each day, she lights up with a daypart
+   greeting — plus a little something she remembers, when she's got it. */
+function maybeWakeUp(p) {
+  try {
+    const today = Journal.todayKey();
+    if (p.lastDaily === today) return;
+    p.lastDaily = today;
+    mem.save();
+    const part = daypart();
+    let greet = part === "morning" ? `Good morning, ${p.name}!`
+      : part === "afternoon" ? `Good afternoon, ${p.name}!`
+      : `Good evening, ${p.name}!`;
+    const pm = getPersonMemory(p.id);
+    const fact = pm && pm.randomFact && pm.randomFact();
+    if (fact && Math.random() < 0.5) {
+      const prefix = ["favorite", "person", "pet"].includes(fact.kind) ? "your" : "you";
+      greet += ` Still thinking about ${prefix} ${fact.text} — love that.`;
+    }
+    const out = forAudience(greet);
+    addMessage("aqua", out);
+    Speaker.say(out);
+  } catch (e) { /* wake-ups are best-effort */ }
 }
 
 /* ---------------- audience: kids, Rhonda, Angela ---------------- */
@@ -148,8 +179,20 @@ function isAngela() {
 }
 
 function audience() {
-  return { child: isChildSpeaker(), rhonda: isRhonda() };
+  return { child: isChildSpeaker(), rhonda: isRhonda(), spanish: !!mem.data.spanish };
 }
+
+/* Poolside Spanish cheat sheet — pool words and phrases for the crew. */
+const POOL_ES = `🇪🇸 Poolside Spanish cheat sheet:
+• chlorine = cloro • pH = pe-ache • alkalinity = alcalinidad
+• shock = tratamiento de choque • filter = filtro • pump = bomba
+• skimmer = desnatador • backwash = retrolavado • salt cell = celda de sal
+• gallons = galones • pool = piscina / alberca
+• "The pool needs chlorine." = "La piscina necesita cloro."
+• "Test the water." = "Analiza el agua."
+• "Clean the filter." = "Limpia el filtro."
+• "I'll be there tomorrow." = "Llego mañana."
+Say /spanish on and I'll answer en español (best with the OpenAI brain).`;
 
 /* Rewrite a conversational reply for who's listening. Never applied to
    command output (code samples must stay exact). */
@@ -431,6 +474,11 @@ const game = {
 
 const guessGame = { active: false, state: null };  // Guess the number
 const wordGame = { active: false, state: null };   // Word guess (hangman-lite)
+const cfGame = { active: false, grid: null, player: "R", aqua: "Y", aiTimer: null };  // Connect Four
+const checkGame = { active: false, state: null, player: "r", aqua: "b", aiTimer: null, sel: -1, selMoves: [] };  // Checkers
+const chessGame = { active: false, state: null, player: "w", aqua: "b", aiTimer: null, sel: -1, selMoves: [], promo: null };  // Chess
+
+let pendingNote = false;      // bare "jot this down" — the next turn is the note
 
 /* Angela's pop quizzes (conversational — she answers in chat) */
 let pendingQuiz = null;       // { id, subject, q, answers[] }
@@ -547,6 +595,50 @@ function send() {
 }
 
 /* ---------------- core send/receive ---------------- */
+/* Voice notes — "Aqua, jot this down: call the pool store". */
+const NOTE_WITH_TEXT = [
+  /^(?:aqua[, ]*)?(?:please )?(?:jot|write) (?:this|that|it) down[:\s]+(.+)$/i,
+  /^(?:aqua[, ]*)?(?:note to self|journal this|add to (?:the )?journal|remember this|take a note)[:\s]+(.+)$/i,
+];
+const NOTE_BARE = /^(?:aqua[, ]*)?(?:jot (?:this|that|it) down|note to self|take a note)\.?$/i;
+
+function noteTurn(text, content) {
+  Speaker.stop();
+  addMessage("user", text);
+  input.value = "";
+  autosize();
+  busy = true;
+  setSendDisabled(true);
+  pendingNote = false;
+  logDayExchange("(note to self)", `📝 ${content}`);
+  const sMem = getSpeakerMemory();
+  sMem.addExchange("(note to self)", content);
+  sMem.save();
+  const lines = [
+    "Jotted down — it's in today's journal.",
+    "Got it — written down for today.",
+    "Noted! You'll see it in the journal.",
+  ];
+  const out = forAudience(lines[Math.floor(Math.random() * lines.length)]);
+  addMessage("aqua", out);
+  Speaker.say(out);
+  busy = false;
+  setSendDisabled(false);
+  if (!Speaker._speaking) setFaceState("idle");
+}
+
+function noteAskTurn(text) {
+  Speaker.stop();
+  addMessage("user", text);
+  input.value = "";
+  autosize();
+  pendingNote = true;
+  const out = forAudience("You got it — what should I jot down?");
+  addMessage("aqua", out);
+  Speaker.say(out);
+  logDayExchange(text, out);
+}
+
 async function handleUserText(text, whoName) {
   text = (text || "").trim();
   if (!text) return;
@@ -554,6 +646,16 @@ async function handleUserText(text, whoName) {
   if (whoName !== undefined) setActiveSpeaker(whoName || null);
   const sBrain = getSpeakerBrain();     // the person she's talking with
   const sMem = getSpeakerMemory();
+
+  // A voice note ("jot this down: …") wins over everything but commands.
+  if (!text.startsWith("/")) {
+    if (pendingNote) { noteTurn(text, text); return; }
+    for (const re of NOTE_WITH_TEXT) {
+      const m = re.exec(text);
+      if (m && m[1].trim()) { noteTurn(text, m[1].trim()); return; }
+    }
+    if (NOTE_BARE.test(text)) { noteAskTurn(text); return; }
+  }
 
   // A pending pop quiz eats the next conversational turn (commands pass through).
   if (pendingQuiz && !text.startsWith("/")) {
@@ -566,38 +668,64 @@ async function handleUserText(text, whoName) {
     }
   }
 
-  // Spoken game move? Talk to whichever game is on screen (or the active one).
+  // Spoken game move? The open tab's game gets first dibs, then the rest.
+  // (Rock-paper-scissors only listens on its own tab — "rock" is also music.)
   if (!text.startsWith("/")) {
     const words = text.split(/\s+/).length;
-    const gtab = dockOpen() ? dock.tab
-      : game.active ? "ttt"
-      : guessGame.active ? "guess"
-      : wordGame.active ? "word" : null;
-    if (gtab === "ttt" && game.active && words <= 4) {
-      const moveIdx = TicTacToe.parseMove(text);
-      if (moveIdx !== null) {
-        addMessage("user", text);
-        openDock("ttt");
-        playMoveAt(moveIdx);
-        return;
+    const order = [dock.tab, "ttt", "chess", "checkers", "cf", "guess", "word"]
+      .filter((t, i, a) => a.indexOf(t) === i);
+    for (const gtab of order) {
+      if (gtab === "ttt" && game.active && words <= 4) {
+        const moveIdx = TicTacToe.parseMove(text);
+        if (moveIdx !== null) {
+          addMessage("user", text);
+          openDock("ttt");
+          playMoveAt(moveIdx);
+          return;
+        }
+      } else if (gtab === "chess" && chessGame.active && chessGame.state && words <= 4) {
+        const mv = Chess.parse(text, chessGame.state);
+        if (mv && chessGame.state.t === chessGame.player) {
+          addMessage("user", text);
+          openDock("chess");
+          playChessMove(mv);
+          return;
+        }
+      } else if (gtab === "checkers" && checkGame.active && checkGame.state && words <= 3) {
+        const mv = Checkers.parse(text, checkGame.state, checkGame.player);
+        if (mv && checkGame.state.t === checkGame.player) {
+          addMessage("user", text);
+          openDock("checkers");
+          playCheckersMove(mv);
+          return;
+        }
+      } else if (gtab === "cf" && cfGame.active && words <= 3) {
+        const col = ConnectFour.parse(text);
+        if (col !== null) {
+          addMessage("user", text);
+          openDock("cf");
+          playCfDrop(col);
+          return;
+        }
+      } else if (gtab === "guess" && guessGame.active && words <= 4) {
+        const n = GuessNumber.parse(text);
+        if (n !== null) {
+          addMessage("user", text);
+          openDock("guess");
+          playGuess(n);
+          return;
+        }
+      } else if (gtab === "word" && wordGame.active && words <= 2) {
+        const ch = Hangman.parse(text);
+        if (ch !== null) {
+          addMessage("user", text);
+          openDock("word");
+          playLetter(ch);
+          return;
+        }
       }
-    } else if (gtab === "guess" && guessGame.active && words <= 4) {
-      const n = GuessNumber.parse(text);
-      if (n !== null) {
-        addMessage("user", text);
-        openDock("guess");
-        playGuess(n);
-        return;
-      }
-    } else if (gtab === "word" && wordGame.active && words <= 2) {
-      const ch = Hangman.parse(text);
-      if (ch !== null) {
-        addMessage("user", text);
-        openDock("word");
-        playLetter(ch);
-        return;
-      }
-    } else if (gtab === "rps" && words === 1) {
+    }
+    if (dock.tab === "rps" && words === 1) {
       const mv = RPS.parse(text);
       if (mv) {
         addMessage("user", text);
@@ -749,6 +877,7 @@ function handleAction(action) {
     case "show_help": openPanel("help"); break;
     case "show_settings": openPanel("settings"); break;
     case "show_pool": openPanel("pool"); break;
+    case "show_truck": openPanel("truck"); break;
     case "show_journal": openPanel("journal"); break;
     case "show_people": openPanel("people"); break;
     case "toggle_handsfree": setHandsfree(!handsfreeOn); break;
@@ -788,12 +917,17 @@ const HELP_TEXT = `Commands you can type anytime:
   /whoami          who she thinks is on the mic right now
   /strict on|off   mic obeys ONLY enrolled voices (typing always works)
   /game            open the game side panel (separate from chat)
-  /game rps|guess|word  jump straight to a game
+  /game chess|checkers|cf|rps|guess|word  jump straight to a game
   /move <cell>     tic-tac-toe move — top left, center, B2, or 1-9
   /rps <rock|paper|scissors>  throw a round
   /guess <number>  guess the number (starts a game if needed)
   /letter <x>      guess a letter in word guess
-  /quiz            pop quiz me! math, science, words, history
+  /quiz [subject]  pop quiz! math, spelling, science, words, history
+  /spanish on|off  she answers en español (crew-friendly)
+  /pool-es         poolside Spanish cheat sheet
+  /note <text>     jot a voice-note into today's journal
+  /route           today's customer stops, in order
+  /truck           truck view: route + jobs, big and touch-friendly
   /brain           which brain she's thinking with
   /settings        connect her OpenAI brain (API key)
   /backup          export her memory to a file
@@ -804,8 +938,9 @@ Tips:
   * Press Enter to send, Shift+Enter for a new line.
   * Tap the microphone to talk, or the headphones for hands-free.
   * Say "Hey Aqua" when the wake word is on.
-  * Play on the game side (🎮) — tic-tac-toe, rock-paper-scissors,
-    guess-the-number, and word guess. Say your move while you chat.
+  * Play on the game side (🎮) — tic-tac-toe, chess, checkers, connect four,
+    rock-paper-scissors, guess-the-number, and word guess. Say your move
+    while you chat ("top left", "e2 to e4", "column 4").
   * Everything she learns stays on your PC.`;
 
 function handleCommand(line) {
@@ -921,9 +1056,10 @@ function handleCommand(line) {
       break;
 
     case "/brain":
-      out.reply = smart.on
+      out.reply = (smart.on
         ? `OpenAI brain — model ${smart.model}. I'm thinking with OpenAI, but I still learn and remember the same way.`
-        : "Built-in local brain. Open Settings (⚙️) to connect my OpenAI brain with your API key.";
+        : "Built-in local brain. Open Settings (⚙️) to connect my OpenAI brain with your API key.")
+        + (mem.data.spanish ? " · 🇪🇸 Spanish mode is on." : "");
       break;
 
     case "/pool": {
@@ -1152,10 +1288,22 @@ function handleCommand(line) {
         if (!wordGame.active) startWordGame();
         else openDock("word");
         out.reply = "Word guess is up on the game side — guess letters one at a time.";
+      } else if (["cf", "connect", "connect four", "connect4", "four"].includes(arg)) {
+        if (!cfGame.active) startCfGame();
+        else openDock("cf");
+        out.reply = "Connect Four is up on the game side — you're red. Say “column 4”.";
+      } else if (["checkers", "draughts", "checker"].includes(arg)) {
+        if (!checkGame.active) startCheckersGame();
+        else openDock("checkers");
+        out.reply = "Checkers is up on the game side — you're red. Tap a piece, then a square — or say “c3 to d4”.";
+      } else if (["chess"].includes(arg)) {
+        if (!chessGame.active) startChessGame();
+        else openDock("chess");
+        out.reply = "Chess is up on the game side — you're white. Tap a piece, then a square — or say “e2 to e4”.";
       } else {
         if (!game.active) startGame();
         else openDock("ttt");
-        out.reply = "The game side is open — tic-tac-toe, rock-paper-scissors, guess-the-number, and word guess.";
+        out.reply = "The game side is open — tic-tac-toe, chess, checkers, connect four, rock-paper-scissors, guess-the-number, and word guess.";
       }
       break;
     }
@@ -1200,10 +1348,80 @@ function handleCommand(line) {
     }
 
     case "/quiz": {
-      askQuiz(true);
+      askQuiz(true, quizSubject(rest));
       out.reply = "";
       break;
     }
+
+    case "/spanish":
+    case "/espanol": {
+      if (rest.toLowerCase() === "on" || rest.toLowerCase() === "off") {
+        const on = rest.toLowerCase() === "on";
+        mem.data.spanish = on;
+        mem.save();
+        out.reply = on
+          ? "¡Órale! Spanish mode is on — te contesto en español. (Shines brightest with the OpenAI brain.)"
+          : "Spanish mode is off — back to Texas English, y'all.";
+      } else {
+        out.reply = `Spanish mode is ${mem.data.spanish ? "on" : "off"}. Usage: /spanish on|off — or /pool-es for the cheat sheet.`;
+      }
+      break;
+    }
+
+    case "/pool-es":
+    case "/espanol-cheat":
+      out.reply = POOL_ES;
+      break;
+
+    case "/note": {
+      if (!rest) {
+        pendingNote = true;
+        out.reply = "You got it — what should I jot down?";
+      } else {
+        logDayExchange("(note to self)", `📝 ${rest}`);
+        mem.save();
+        out.reply = "Jotted down — it's in today's journal.";
+      }
+      break;
+    }
+
+    case "/route": {
+      const arg = rest.trim();
+      if (/^addc?\s+\d+$/i.test(arg)) {
+        const n = parseInt(arg.replace(/^addc?\s+/i, ""), 10);
+        const c = (mem.data.customers || [])[n - 1];
+        if (!c) { out.reply = "No such customer — /customers to see the numbers."; break; }
+        routeList().push({ id: "r" + Date.now().toString(36), text: c.text });
+        mem.save();
+        out.reply = `Stop ${routeList().length}: ${c.text}.`;
+      } else if (/^add\s+/i.test(arg)) {
+        const text = arg.replace(/^add\s+/i, "").trim();
+        if (!text) { out.reply = "Usage: /route add Smith - filter clean"; break; }
+        routeList().push({ id: "r" + Date.now().toString(36), text });
+        mem.save();
+        out.reply = `Stop ${routeList().length}: ${text}.`;
+      } else if (/^done\s+\d+$/i.test(arg)) {
+        const n = parseInt(arg.replace(/^done\s+/i, ""), 10);
+        const stop = routeList()[n - 1];
+        if (!stop) { out.reply = "No such stop — /route to see the list."; break; }
+        toggleRouteDone(stop.id);
+        out.reply = `${routeDoneSet().ids.includes(stop.id) ? "Checked off" : "Reopened"}: ${stop.text}.`;
+      } else if (arg.toLowerCase() === "clear") {
+        mem.data.route = [];
+        mem.save();
+        out.reply = "Route cleared — fresh road ahead.";
+      } else if (arg) {
+        out.reply = "Usage: /route, /route add <stop>, /route addc <customer #>, /route done <n>, /route clear";
+      } else {
+        out.reply = routeText();
+      }
+      break;
+    }
+
+    case "/truck":
+      out.reply = "Truck view is open — route and jobs, big and touch-friendly.";
+      out.action = "show_truck";
+      break;
 
     case "/update":
       if (bridge && bridge.installUpdate) { bridge.installUpdate(); out.reply = "Installing the update…"; }
@@ -1908,6 +2126,9 @@ function renderDock() {
   else if (dock.tab === "rps") buildRpsBoard();
   else if (dock.tab === "guess") buildGuessBoard();
   else if (dock.tab === "word") buildWordBoard();
+  else if (dock.tab === "cf") buildCfBoard();
+  else if (dock.tab === "checkers") buildCheckersBoard();
+  else if (dock.tab === "chess") buildChessBoard();
 }
 
 function dockTitleEl(text) {
@@ -2337,13 +2558,463 @@ function playLetter(ch) {
   if (dockOpen() && dock.tab === "word") renderDock();
 }
 
+/* ---------------- shared dock helpers ---------------- */
+function gameDifficulty() {
+  return mem.data.gameDifficulty || "medium";
+}
+
+function dockDifficultyRow(onPick) {
+  const row = document.createElement("div");
+  row.className = "game-actions";
+  const cur = gameDifficulty();
+  for (const d of ["easy", "medium", "hard"]) {
+    const b = document.createElement("button");
+    b.className = "mini-btn" + (cur === d ? " current" : "");
+    b.textContent = d.charAt(0).toUpperCase() + d.slice(1);
+    b.addEventListener("click", () => {
+      mem.data.gameDifficulty = d;
+      mem.save();
+      onPick(d);
+    });
+    row.appendChild(b);
+  }
+  return row;
+}
+
+function dockScoreLine(text) {
+  const el = document.createElement("div");
+  el.className = "game-score";
+  el.textContent = text;
+  return el;
+}
+
+function dockNewGameRow(label, onNew) {
+  const actions = document.createElement("div");
+  actions.className = "game-actions";
+  const newBtn = document.createElement("button");
+  newBtn.className = "mini-btn";
+  newBtn.textContent = label;
+  newBtn.addEventListener("click", onNew);
+  actions.appendChild(newBtn);
+  return actions;
+}
+
+/* ---------------- connect four (side dock) ---------------- */
+function cfScore() {
+  if (!mem.data.cfScore) mem.data.cfScore = { player: 0, aqua: 0, tie: 0 };
+  return mem.data.cfScore;
+}
+
+function startCfGame() {
+  cfGame.active = true;
+  cfGame.grid = ConnectFour.newGrid();
+  if (cfGame.aiTimer) { clearTimeout(cfGame.aiTimer); cfGame.aiTimer = null; }
+  openDock("cf");
+  sayForAudience(isChildSpeaker()
+    ? "Connect Four! You're red — drop one in!"
+    : "Connect Four. You're red, boss — your drop.");
+}
+
+function buildCfBoard() {
+  const body = $("dock-body");
+  if (!body) return;
+  body.innerHTML = "";
+  if (!cfGame.grid) cfGame.grid = ConnectFour.newGrid();
+  const root = document.createElement("div");
+  root.className = "game-bubble";
+  root.appendChild(dockTitleEl("Connect Four"));
+
+  const cols = document.createElement("div");
+  cols.className = "cf-cols";
+  for (let c = 0; c < ConnectFour.COLS; c++) {
+    const b = document.createElement("button");
+    b.className = "cf-col";
+    b.textContent = "▼";
+    b.disabled = !cfGame.active || !!cfGame.grid[0][c];
+    b.addEventListener("click", () => playCfDrop(c));
+    cols.appendChild(b);
+  }
+  root.appendChild(cols);
+
+  const grid = document.createElement("div");
+  grid.className = "cf-grid";
+  for (let r = 0; r < ConnectFour.ROWS; r++) {
+    for (let c = 0; c < ConnectFour.COLS; c++) {
+      const cell = document.createElement("div");
+      const pc = cfGame.grid[r][c];
+      cell.className = "cf-cell" + (pc === "R" ? " R" : pc === "Y" ? " Y" : "");
+      grid.appendChild(cell);
+    }
+  }
+  root.appendChild(grid);
+
+  const status = document.createElement("div");
+  status.className = "game-status";
+  status.textContent = !cfGame.active ? "Tap New game to play." : "Your drop — you're red.";
+  root.appendChild(status);
+
+  const sc = cfScore();
+  root.appendChild(dockScoreLine(`You ${sc.player} · Aqua ${sc.aqua} · Ties ${sc.tie}`));
+  root.appendChild(dockNewGameRow("New game", () => startCfGame()));
+  root.appendChild(dockDifficultyRow(() => startCfGame()));
+  body.appendChild(root);
+}
+
+function playCfDrop(c) {
+  if (!cfGame.active || !cfGame.grid) return;
+  if (ConnectFour.drop(cfGame.grid, c, cfGame.player) < 0) {
+    toast("That column's full — pick another.");
+    return;
+  }
+  if (dockOpen() && dock.tab === "cf") renderDock();
+  const w = ConnectFour.winner(cfGame.grid);
+  if (w) { endCf(w); return; }
+  if (ConnectFour.isFull(cfGame.grid)) { endCf(null); return; }
+  cfGame.aiTimer = setTimeout(cfAiMove, 450 + Math.random() * 350);
+}
+
+function cfAiMove() {
+  if (!cfGame.active || !cfGame.grid) return;
+  const c = ConnectFour.ai(cfGame.grid, cfGame.aqua, gameDifficulty());
+  if (c < 0) return;
+  ConnectFour.drop(cfGame.grid, c, cfGame.aqua);
+  if (dockOpen() && dock.tab === "cf") renderDock();
+  const w = ConnectFour.winner(cfGame.grid);
+  if (w) { endCf(w); return; }
+  if (ConnectFour.isFull(cfGame.grid)) { endCf(null); return; }
+}
+
+function endCf(w) {
+  cfGame.active = false;
+  const sc = cfScore();
+  if (w === cfGame.player) {
+    sc.player++;
+    gameComment(["Four in a row — you got me! Nice droppin'.", "Well would you look at that — you win! Rematch?"]);
+  } else if (w === cfGame.aqua) {
+    sc.aqua++;
+    gameComment(["That's four, darlin' — I win this one!", "Connect four! Read you like a pump schedule."]);
+  } else {
+    sc.tie++;
+    gameComment(["Board's full and nobody blinked. Tie game!"]);
+  }
+  mem.save();
+  if (dockOpen() && dock.tab === "cf") renderDock();
+}
+
+/* ---------------- checkers (side dock) ---------------- */
+function checkScore() {
+  if (!mem.data.checkScore) mem.data.checkScore = { player: 0, aqua: 0, tie: 0 };
+  return mem.data.checkScore;
+}
+
+function startCheckersGame() {
+  checkGame.active = true;
+  checkGame.state = Checkers.initial();
+  checkGame.sel = -1;
+  checkGame.selMoves = [];
+  if (checkGame.aiTimer) { clearTimeout(checkGame.aiTimer); checkGame.aiTimer = null; }
+  openDock("checkers");
+  sayForAudience(isChildSpeaker()
+    ? "Checkers! You're red — you go first!"
+    : "Checkers. You're red, boss. Tap a piece, then a square.");
+}
+
+function checkIsMine(piece) {
+  return !!piece && piece.c === checkGame.player;
+}
+
+function buildCheckersBoard() {
+  const body = $("dock-body");
+  if (!body) return;
+  body.innerHTML = "";
+  if (!checkGame.state) checkGame.state = Checkers.initial();
+  const st = checkGame.state;
+  const root = document.createElement("div");
+  root.className = "game-bubble";
+  root.appendChild(dockTitleEl("Checkers"));
+
+  if (checkGame.active && st.t === checkGame.player &&
+      Checkers.all(st, checkGame.player).some((m) => m.takes.length)) {
+    const hint = document.createElement("div");
+    hint.className = "quiz-tag";
+    hint.textContent = "You've got a jump — take it!";
+    root.appendChild(hint);
+  }
+
+  const grid = document.createElement("div");
+  grid.className = "chk-grid";
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const i = r * 8 + c;
+      const sq = document.createElement("button");
+      const dark = (r + c) % 2 === 1;
+      sq.className = "chk-sq " + (dark ? "dark" : "light");
+      const piece = st.b[i];
+      if (piece) {
+        const dot = document.createElement("span");
+        dot.className = "chk-piece " + (piece.c === "r" ? "pr" : "pb") + (piece.k ? " king" : "");
+        dot.textContent = piece.k ? "♛" : "●";
+        sq.appendChild(dot);
+      }
+      if (i === checkGame.sel) sq.classList.add("sel");
+      if (checkGame.selMoves.some((m) => m.path[0] === i)) sq.classList.add("tgt");
+      sq.disabled = !checkGame.active || st.t !== checkGame.player;
+      sq.addEventListener("click", () => checkersTap(i));
+      grid.appendChild(sq);
+    }
+  }
+  root.appendChild(grid);
+
+  const status = document.createElement("div");
+  status.className = "game-status";
+  status.textContent = !checkGame.active ? "Tap New game to play."
+    : st.t === checkGame.player ? "Your move — you're red." : "My turn… hold your horses.";
+  root.appendChild(status);
+
+  const sc = checkScore();
+  root.appendChild(dockScoreLine(`You ${sc.player} · Aqua ${sc.aqua} · Ties ${sc.tie}`));
+  root.appendChild(dockNewGameRow("New game", () => startCheckersGame()));
+  root.appendChild(dockDifficultyRow(() => startCheckersGame()));
+  body.appendChild(root);
+}
+
+function checkersTap(i) {
+  if (!checkGame.active || !checkGame.state) return;
+  const st = checkGame.state;
+  if (st.t !== checkGame.player) return;
+  if (checkGame.sel >= 0) {
+    const mv = checkGame.selMoves.find((m) => m.path[0] === i);
+    if (mv) { playCheckersMove(mv); return; }
+  }
+  if (checkIsMine(st.b[i])) {
+    checkGame.sel = i;
+    checkGame.selMoves = Checkers.all(st, checkGame.player).filter((m) => m.from === i);
+  } else {
+    checkGame.sel = -1;
+    checkGame.selMoves = [];
+  }
+  if (dockOpen() && dock.tab === "checkers") renderDock();
+}
+
+function playCheckersMove(mv) {
+  if (!checkGame.active || !checkGame.state) return;
+  checkGame.state = Checkers.apply(checkGame.state, mv);
+  checkGame.sel = -1;
+  checkGame.selMoves = [];
+  if (dockOpen() && dock.tab === "checkers") renderDock();
+  const status = Checkers.status(checkGame.state);
+  if (status.over) { endCheckers(status.winner); return; }
+  checkGame.aiTimer = setTimeout(checkersAiMove, 450 + Math.random() * 350);
+}
+
+function checkersAiMove() {
+  if (!checkGame.active || !checkGame.state) return;
+  const mv = Checkers.ai(checkGame.state, checkGame.aqua, gameDifficulty());
+  if (!mv) return;
+  checkGame.state = Checkers.apply(checkGame.state, mv);
+  if (dockOpen() && dock.tab === "checkers") renderDock();
+  const status = Checkers.status(checkGame.state);
+  if (status.over) endCheckers(status.winner);
+}
+
+function endCheckers(w) {
+  checkGame.active = false;
+  const sc = checkScore();
+  if (w === checkGame.player) {
+    sc.player++;
+    gameComment(["King me — oh wait, YOU win! Well played, boss.", "You swept the whole board! Rematch?"]);
+  } else if (w === checkGame.aqua) {
+    sc.aqua++;
+    gameComment(["Last piece taken — I win this one! Good game.", "Got every last one of you. Run it back?"]);
+  } else {
+    sc.tie++;
+    gameComment(["Nobody won that one — call it a tie!"]);
+  }
+  mem.save();
+  if (dockOpen() && dock.tab === "checkers") renderDock();
+}
+
+/* ---------------- chess (side dock) ---------------- */
+const CHESS_GLYPH = {
+  K: "♔", Q: "♕", R: "♖", B: "♗", N: "♘", P: "♙",
+  k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟",
+};
+
+function chessScore() {
+  if (!mem.data.chessScore) mem.data.chessScore = { player: 0, aqua: 0, tie: 0 };
+  return mem.data.chessScore;
+}
+
+function startChessGame() {
+  chessGame.active = true;
+  chessGame.state = Chess.initial();
+  chessGame.sel = -1;
+  chessGame.selMoves = [];
+  chessGame.promo = null;
+  if (chessGame.aiTimer) { clearTimeout(chessGame.aiTimer); chessGame.aiTimer = null; }
+  openDock("chess");
+  sayForAudience(isChildSpeaker()
+    ? "Chess! You're white — you go first. Good luck!"
+    : "Chess. You're white, boss — show me what you got.");
+}
+
+function chessIsMine(piece) {
+  if (!piece) return false;
+  return chessGame.player === "w" ? piece < "a" : piece >= "a";
+}
+
+function buildChessBoard() {
+  const body = $("dock-body");
+  if (!body) return;
+  body.innerHTML = "";
+  if (!chessGame.state) chessGame.state = Chess.initial();
+  const st = chessGame.state;
+  const root = document.createElement("div");
+  root.className = "game-bubble";
+  root.appendChild(dockTitleEl("Chess"));
+
+  const grid = document.createElement("div");
+  grid.className = "chess-grid";
+  for (let dr = 0; dr < 8; dr++) {
+    for (let f = 0; f < 8; f++) {
+      const r = 7 - dr;
+      const i = r * 8 + f;
+      const sq = document.createElement("button");
+      sq.className = "chess-sq " + ((r + f) % 2 === 1 ? "dark" : "light");
+      const piece = st.b[i];
+      if (piece) {
+        const g = document.createElement("span");
+        g.className = "chess-piece " + (piece < "a" ? "pw" : "pb");
+        g.textContent = CHESS_GLYPH[piece] || piece;
+        sq.appendChild(g);
+      }
+      if (i === chessGame.sel) sq.classList.add("sel");
+      if (chessGame.selMoves.some((m) => m.t === i)) sq.classList.add("tgt");
+      sq.disabled = !chessGame.active || st.t !== chessGame.player || !!chessGame.promo;
+      sq.addEventListener("click", () => chessTap(i));
+      grid.appendChild(sq);
+    }
+  }
+  root.appendChild(grid);
+
+  if (chessGame.promo && chessGame.promo.length) {
+    const prow = document.createElement("div");
+    prow.className = "promo-row";
+    const label = document.createElement("span");
+    label.className = "game-status";
+    label.textContent = "Promote to: ";
+    prow.appendChild(label);
+    for (const mv of chessGame.promo) {
+      const b = document.createElement("button");
+      b.className = "mini-btn promo-btn";
+      b.textContent = CHESS_GLYPH[mv.promo] || "Q";
+      b.title = mv.promo;
+      b.addEventListener("click", () => {
+        chessGame.promo = null;
+        playChessMove(mv);
+      });
+      prow.appendChild(b);
+    }
+    root.appendChild(prow);
+  }
+
+  const status = document.createElement("div");
+  status.className = "game-status";
+  if (!chessGame.active) status.textContent = "Tap New game to play.";
+  else {
+    status.textContent = (st.t === chessGame.player ? "Your move." : "My turn…")
+      + (Chess.inCheck(st, st.t) ? " — check!" : "")
+      + ` · Move ${st.full}`;
+  }
+  root.appendChild(status);
+
+  const sc = chessScore();
+  root.appendChild(dockScoreLine(`You ${sc.player} · Aqua ${sc.aqua} · Ties ${sc.tie}`));
+  root.appendChild(dockNewGameRow("New game", () => startChessGame()));
+  root.appendChild(dockDifficultyRow(() => startChessGame()));
+  body.appendChild(root);
+}
+
+function chessTap(i) {
+  if (!chessGame.active || !chessGame.state || chessGame.promo) return;
+  const st = chessGame.state;
+  if (st.t !== chessGame.player) return;
+  if (chessGame.sel >= 0) {
+    const opts = chessGame.selMoves.filter((m) => m.t === i);
+    if (opts.length === 1) { playChessMove(opts[0]); return; }
+    if (opts.length > 1) {  // promotion — let them pick the piece
+      chessGame.promo = opts;
+      if (dockOpen() && dock.tab === "chess") renderDock();
+      return;
+    }
+  }
+  if (chessIsMine(st.b[i])) {
+    chessGame.sel = i;
+    chessGame.selMoves = Chess.legal(st, i);
+  } else {
+    chessGame.sel = -1;
+    chessGame.selMoves = [];
+  }
+  if (dockOpen() && dock.tab === "chess") renderDock();
+}
+
+function playChessMove(mv) {
+  if (!chessGame.active || !chessGame.state) return;
+  chessGame.state = Chess.apply(chessGame.state, mv);
+  chessGame.sel = -1;
+  chessGame.selMoves = [];
+  chessGame.promo = null;
+  if (dockOpen() && dock.tab === "chess") renderDock();
+  const status = Chess.status(chessGame.state);
+  if (status.over) { endChess(status.winner); return; }
+  chessGame.aiTimer = setTimeout(chessAiMove, 450 + Math.random() * 350);
+}
+
+function chessAiMove() {
+  if (!chessGame.active || !chessGame.state) return;
+  const mv = Chess.ai(chessGame.state, gameDifficulty());
+  if (!mv) return;
+  chessGame.state = Chess.apply(chessGame.state, mv);
+  if (dockOpen() && dock.tab === "chess") renderDock();
+  const status = Chess.status(chessGame.state);
+  if (status.over) endChess(status.winner);
+}
+
+function endChess(w) {
+  chessGame.active = false;
+  const sc = chessScore();
+  if (w === chessGame.player) {
+    sc.player++;
+    gameComment(["Checkmate — you got me! Beautiful game, boss.", "Well played! That checkmate was earned. Rematch?"]);
+  } else if (w === chessGame.aqua) {
+    sc.aqua++;
+    gameComment(["Checkmate! Don't feel bad — I think in trees.", "Got your king! Good game, darlin' — run it back?"]);
+  } else {
+    sc.tie++;
+    gameComment(["Stalemate — nobody's king falls today. Tie game!"]);
+  }
+  mem.save();
+  if (dockOpen() && dock.tab === "chess") renderDock();
+}
+
 /* ---------------- Angela's pop quizzes (in chat) ---------------- */
 function quizPick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function askQuiz(force) {
-  pendingQuiz = SchoolQuiz.pick(recentQuizIds);
+function quizSubject(arg) {
+  const t = String(arg || "").toLowerCase().trim();
+  if (/^(math|maths|arithmetic)$/.test(t)) return "math";
+  if (/^(spell|spelling)$/.test(t)) return "spelling";
+  if (/^(science|sci)$/.test(t)) return "science";
+  if (/^(ela|english|language ?arts|words|reading)$/.test(t)) return "language arts";
+  if (/^(history|social ?studies)$/.test(t)) return "history";
+  if (/^(thinking|riddle|riddles|fun)$/.test(t)) return "thinking";
+  return null;
+}
+
+function askQuiz(force, subject) {
+  pendingQuiz = SchoolQuiz.pick(recentQuizIds, subject);
   recentQuizIds.push(pendingQuiz.id);
   if (recentQuizIds.length > 12) recentQuizIds = recentQuizIds.slice(-12);
   quizCooldown = 4;
@@ -2410,6 +3081,7 @@ function openPanel(which) {
   else if (which === "help") renderHelp();
   else if (which === "settings") renderSettings();
   else if (which === "pool") renderPool();
+  else if (which === "truck") renderTruck();
   else if (which === "journal") renderJournal();
   else if (which === "people") renderPeople();
   else return;
@@ -2437,6 +3109,7 @@ $("btn-game").addEventListener("click", () => {
   else openDock(dock.tab);
 });
 $("btn-people").addEventListener("click", () => openPanel("people"));
+$("btn-truck").addEventListener("click", () => openPanel("truck"));
 $("dock-close").addEventListener("click", closeDock);
 (() => {
   const tabs = $("dock-tabs");
@@ -2691,12 +3364,17 @@ function renderHelp() {
     ["/whoami", "who she thinks is on the mic"],
     ["/strict on|off", "mic obeys ONLY enrolled voices"],
     ["/game", "open the game side panel"],
-    ["/game rps", "jump to rock-paper-scissors (guess, word too)"],
+    ["/game chess", "jump to a game (checkers, cf, rps, guess, word)"],
     ["/move top left", "tic-tac-toe move — top left, center, B2, 1-9"],
     ["/rps rock", "throw rock, paper, or scissors"],
     ["/guess 42", "guess the number"],
     ["/letter e", "guess a letter in word guess"],
-    ["/quiz", "pop quiz! math, science, words, history"],
+    ["/quiz spelling", "drill a subject (math, spelling, science…)"],
+    ["/spanish on|off", "she answers en español"],
+    ["/pool-es", "poolside Spanish cheat sheet"],
+    ["/note jot this", "voice-note into today's journal"],
+    ["/route add …", "today's customer stops, in order"],
+    ["/truck", "truck view: route + jobs"],
     ["/brain", "which brain she's using"],
     ["/settings", "connect her OpenAI brain"],
     ["/backup", "export her memory to a file"],
@@ -2712,7 +3390,8 @@ function renderHelp() {
       <p class="hint">• Press <b>Enter</b> to send, <b>Shift+Enter</b> for a new line.<br>
       • Tap the <b>🎤</b> to talk (she uses OpenAI Whisper to hear you).<br>
       • Say <b>“goodbye”</b> anytime to wrap up.<br>
-      • Play on the <b>game side</b> (🎮): tic-tac-toe, rock-paper-scissors, guess-the-number, word guess — say your move while you chat.<br>
+      • Play on the <b>game side</b> (🎮): tic-tac-toe, chess, checkers, connect four and more — say your move while you chat.<br>
+      • Tell her <b>“jot this down …”</b> anytime to stick a note in today's journal.<br>
       • Your OpenAI key and everything she learns stay on <b>your PC</b>.</p>
     </div>`;
 }
@@ -2786,6 +3465,46 @@ async function renderSettings() {
   });
 }
 
+/* ---------------- today's route (pool stops in order) ---------------- */
+function routeList() {
+  if (!Array.isArray(mem.data.route)) mem.data.route = [];
+  return mem.data.route;
+}
+
+function routeDoneSet() {
+  const today = Journal.todayKey();
+  if (!mem.data.routeDone || mem.data.routeDone.date !== today) {
+    mem.data.routeDone = { date: today, ids: [] };
+  }
+  return mem.data.routeDone;
+}
+
+function toggleRouteDone(id) {
+  const set = routeDoneSet();
+  const i = set.ids.indexOf(id);
+  if (i >= 0) set.ids.splice(i, 1);
+  else set.ids.push(id);
+  mem.save();
+}
+
+function routeText() {
+  const r = routeList();
+  if (!r.length) return "No route planned — /route add Smith to line up today's stops, or /route addc 2 to pull one from your customers.";
+  const done = routeDoneSet().ids;
+  const lines = r.map((s, i) => `${done.includes(s.id) ? "✓" : "○"} ${i + 1}. ${s.text}`);
+  const left = r.filter((st) => !done.includes(st.id)).length;
+  return `Today's route (${r.length} stop${r.length === 1 ? "" : "s"}${left ? `, ${left} to go` : ", all done!"}):\n${lines.join("\n")}\n\nTap 🚚 Truck to check them off as you go.`;
+}
+
+function moveRouteStop(id, dir) {
+  const r = routeList();
+  const i = r.findIndex((st) => st.id === id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= r.length) return;
+  const tmp = r[i]; r[i] = r[j]; r[j] = tmp;
+  mem.save();
+}
+
 function renderPool() {
   panelTitle.textContent = "Hood's Pool Service";
   const pool = mem.data.pool || Object.assign({}, Pool.DEFAULT_POOL);
@@ -2827,6 +3546,15 @@ function renderPool() {
         <button id="job-add" class="btn-solid">Add</button>
       </div>
       <div id="job-list" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="panel-section">
+      <h3>Today's route (${routeList().length} stops)</h3>
+      <div style="display:flex;gap:8px;">
+        <input id="route-input" class="field-input" placeholder="e.g. Smith — filter clean">
+        <button id="route-add" class="btn-solid">Add</button>
+      </div>
+      <div id="route-list" style="margin-top:12px;"></div>
     </div>
 
     <div class="panel-section">
@@ -2918,6 +3646,52 @@ function renderPool() {
   });
   renderJobs();
 
+  // route
+  const renderRoute = () => {
+    const list = $("route-list");
+    const stops = routeList();
+    const done = routeDoneSet().ids;
+    if (!stops.length) {
+      list.innerHTML = '<div class="hint">No stops yet — add the day\'s customers in order.</div>';
+      return;
+    }
+    list.innerHTML = stops.map((st, i) => `
+      <div class="job-row">
+        <span class="job-num">${i + 1}</span>
+        <span class="job-text" style="${done.includes(st.id) ? "text-decoration:line-through;opacity:0.6;" : ""}">${escapeHtml(st.text)}</span>
+        <button class="mini-btn route-done" data-id="${st.id}" title="Check off">✓</button>
+        <button class="mini-btn route-up" data-id="${st.id}" title="Earlier">↑</button>
+        <button class="mini-btn route-down" data-id="${st.id}" title="Later">↓</button>
+        <button class="mini-btn job-del route-del" data-id="${st.id}" title="Remove">✕</button>
+      </div>`).join("");
+    list.querySelectorAll(".route-done").forEach((b) => b.addEventListener("click", () => {
+      toggleRouteDone(b.dataset.id);
+      renderPool();
+    }));
+    list.querySelectorAll(".route-up").forEach((b) => b.addEventListener("click", () => {
+      moveRouteStop(b.dataset.id, -1);
+      renderPool();
+    }));
+    list.querySelectorAll(".route-down").forEach((b) => b.addEventListener("click", () => {
+      moveRouteStop(b.dataset.id, 1);
+      renderPool();
+    }));
+    list.querySelectorAll(".route-del").forEach((b) => b.addEventListener("click", () => {
+      mem.data.route = routeList().filter((st) => st.id !== b.dataset.id);
+      mem.save();
+      renderPool();
+    }));
+  };
+  $("route-add").addEventListener("click", () => {
+    const text = $("route-input").value.trim();
+    if (!text) return;
+    routeList().push({ id: "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), text });
+    mem.save();
+    $("route-input").value = "";
+    renderPool();
+  });
+  renderRoute();
+
   // weather
   const weatherOut = $("weather-out");
   $("weather-go").addEventListener("click", async () => {
@@ -2959,6 +3733,79 @@ function renderPool() {
     renderPool();
   });
   renderCust();
+}
+
+/* ---------------- truck view (route + jobs, big and touch-friendly) ---------------- */
+function renderTruck() {
+  panelTitle.textContent = "Truck view";
+  const stops = routeList();
+  const done = routeDoneSet().ids;
+  const open = Tasks.open(mem.data.tasks || []);
+
+  panelBody.innerHTML = `
+    <div class="panel-section">
+      <h3>Today's route (${stops.length})</h3>
+      <div id="truck-route"></div>
+    </div>
+    <div class="panel-section">
+      <h3>Open jobs (${open.length})</h3>
+      <div id="truck-jobs"></div>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <input id="truck-job-input" class="field-input" placeholder="Add a job…">
+        <button id="truck-job-add" class="btn-solid">Add</button>
+      </div>
+    </div>
+    <div class="panel-section">
+      <h3>Today's sky</h3>
+      <div id="truck-weather" class="hint">…</div>
+    </div>`;
+
+  const rEl = $("truck-route");
+  if (!stops.length) {
+    rEl.innerHTML = '<div class="hint">No route yet — line up the day\'s stops in 🧰 Pool or with /route add.</div>';
+  } else {
+    rEl.innerHTML = stops.map((st, i) => `
+      <button class="truck-stop${done.includes(st.id) ? " done" : ""}" data-id="${st.id}">
+        <span class="truck-check">${done.includes(st.id) ? "✓" : "○"}</span>
+        <span class="truck-num">${i + 1}</span>
+        <span class="truck-text">${escapeHtml(st.text)}</span>
+      </button>`).join("");
+    rEl.querySelectorAll(".truck-stop").forEach((b) => b.addEventListener("click", () => {
+      toggleRouteDone(b.dataset.id);
+      renderTruck();
+    }));
+  }
+
+  const jEl = $("truck-jobs");
+  if (!open.length) {
+    jEl.innerHTML = '<div class="hint">No open jobs — smooth sailing.</div>';
+  } else {
+    jEl.innerHTML = open.map((t, i) => `
+      <div class="truck-stop">
+        <span class="truck-num">${i + 1}</span>
+        <span class="truck-text">${escapeHtml(t.text)}</span>
+        <button class="mini-btn truck-done" data-id="${t.id}" title="Done">✓</button>
+      </div>`).join("");
+    jEl.querySelectorAll(".truck-done").forEach((b) => b.addEventListener("click", (ev) => {
+      if (ev && ev.stopPropagation) ev.stopPropagation();
+      Tasks.toggle(mem.data.tasks, b.dataset.id);
+      mem.save();
+      renderTruck();
+    }));
+  }
+
+  $("truck-job-add").addEventListener("click", () => {
+    const text = $("truck-job-input").value.trim();
+    if (!text) return;
+    mem.data.tasks = mem.data.tasks || [];
+    Tasks.add(mem.data.tasks, text);
+    mem.save();
+    renderTruck();
+  });
+
+  const wEl = $("truck-weather");
+  if (mem.data.location) loadWeather(mem.data.location, wEl);
+  else wEl.textContent = "Set your city in 🧰 Pool for the day's forecast.";
 }
 
 /* ---------------- reset + quit ---------------- */
@@ -3019,6 +3866,10 @@ async function boot() {
   mem.data.rpsScore = mem.data.rpsScore || { player: 0, aqua: 0, tie: 0 };
   mem.data.guessStats = mem.data.guessStats || { wins: 0, best: null };
   mem.data.wordStats = mem.data.wordStats || { wins: 0, losses: 0 };
+  mem.data.cfScore = mem.data.cfScore || { player: 0, aqua: 0, tie: 0 };
+  mem.data.checkScore = mem.data.checkScore || { player: 0, aqua: 0, tie: 0 };
+  mem.data.chessScore = mem.data.chessScore || { player: 0, aqua: 0, tie: 0 };
+  mem.data.route = mem.data.route || [];
   if (mem.data.strict_voices === undefined) mem.data.strict_voices = true;
   if (!mem.data.gameDifficulty) mem.data.gameDifficulty = "medium";
   if (!mem.data.tts_model) mem.data.tts_model = "tts-1";

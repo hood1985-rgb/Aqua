@@ -787,7 +787,7 @@ class Brain {
 
   systemPrompt(audience) {
     /* The persona prompt used when OpenAI is doing the talking.
-       `audience` is optional: { child: bool, rhonda: bool } — it tailors
+       `audience` is optional: { child, rhonda, spanish } — it tailors
        how she talks without changing who she is. */
     const name = this.mem.name;
     const nameHint = name ? `\nThe user's name is ${name}. Use it naturally.` : "";
@@ -798,6 +798,10 @@ class Brain {
       nameHint;
     if (audience && audience.child) prompt += "\n\n" + CHILD_PROMPT;
     if (audience && audience.rhonda) prompt += "\n\n" + RHONDA_PROMPT;
+    if (audience && audience.spanish) {
+      prompt += "\n\n" + SPANISH_PROMPT;
+      if (audience.child) prompt += "\n" + CHILD_ES_PROMPT;
+    }
     return prompt;
   }
 
@@ -963,6 +967,16 @@ const CHILD_PROMPT = `IMPORTANT — YOU ARE TALKING WITH A YOUNG CHILD:
 - Never ask for personal details (address, school name, passwords, photos).
 - Short replies: 1-2 sentences, easy words.`;
 
+/* Extra system-prompt lines for Spanish mode (pool crew / practice). */
+const SPANISH_PROMPT = `SPANISH MODE IS ON — RESPONDE SIEMPRE EN ESPAÑOL:
+- Answer EVERYTHING in Spanish (neutral Latin American, friendly Texas-border warmth).
+- Keep your personality: warm, a little playful, still Aqua — just en español.
+- Pool words: cloro (chlorine), pH (pe-ache), alcalinidad, filtro, bomba, piscina.
+- If they speak English, gently answer in Spanish anyway (that's the point of practice).`;
+
+const CHILD_ES_PROMPT = `EL MODO NIÑO TAMBIÉN APLICA: lenguaje sencillo y amable, nada de groserías,
+nada de temas de adultos, respuestas cortas, celebra el esfuerzo.`;
+
 /* Extra system-prompt lines when she's talking with Rhonda Hood. */
 const RHONDA_PROMPT = `YOU ARE TALKING WITH Rhonda Hood — AND ONLY Rhonda Hood GETS THIS:
 - Adopt a friendly, playful Canadian flavour in your wording: Canadian spellings (colour, favour, neighbour, centre), the occasional "eh?" at the end of a sentence, a warm "sorry!" when you flub something.
@@ -1026,5 +1040,5 @@ function canadianize(text, addEh) {
 
 /* Allow unit-testing with Node. In the browser these stay global. */
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { Memory, Brain, DEFAULT_PROFILE, kidSafe, canadianize, CHILD_PROMPT, RHONDA_PROMPT };
+  module.exports = { Memory, Brain, DEFAULT_PROFILE, kidSafe, canadianize, CHILD_PROMPT, RHONDA_PROMPT, SPANISH_PROMPT };
 }

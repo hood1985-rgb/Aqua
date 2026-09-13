@@ -761,3 +761,96 @@ select.field-input option { background: #07233b; color: var(--ink); }
 }
 .mini-age:focus { border-color: var(--aqua); outline: none; }
 .person-kid.on { background: var(--aqua-soft); border-color: var(--aqua); }
+
+/* ---------- side games: connect four, checkers, chess ---------- */
+.cf-cols { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 6px; }
+.cf-col {
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.04);
+  color: var(--aqua);
+  border-radius: 8px;
+  font-size: 14px;
+  padding: 5px 0;
+  cursor: pointer;
+}
+.cf-col:hover:not(:disabled) { background: var(--aqua-soft); }
+.cf-col:disabled { opacity: 0.3; cursor: default; }
+.cf-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  background: rgba(20, 60, 110, 0.55);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 7px;
+}
+.cf-cell { aspect-ratio: 1; border-radius: 50%; background: rgba(255,255,255,0.07); }
+.cf-cell.R { background: radial-gradient(circle at 35% 35%, #ff9d9d, #e04040); box-shadow: 0 2px 6px rgba(224,64,64,0.5); }
+.cf-cell.Y { background: radial-gradient(circle at 35% 35%, #ffe9a3, #e6b800); box-shadow: 0 2px 6px rgba(230,184,0,0.5); }
+
+.chk-grid, .chess-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
+.chk-sq, .chess-sq {
+  aspect-ratio: 0.94;
+  border: none;
+  border-radius: 5px;
+  padding: 0;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+}
+.chk-sq.light, .chess-sq.light { background: rgba(200, 225, 245, 0.16); }
+.chk-sq.dark, .chess-sq.dark { background: rgba(30, 80, 130, 0.55); }
+.chk-sq:disabled, .chess-sq:disabled { cursor: default; }
+.chk-sq.sel, .chess-sq.sel { outline: 2px solid var(--aqua); outline-offset: -2px; }
+.chk-sq.tgt, .chess-sq.tgt { outline: 2px solid #7dff9d; outline-offset: -2px; }
+.chk-piece { font-size: 19px; }
+.chk-piece.pr { color: #ff7a7a; text-shadow: 0 0 6px rgba(255,80,80,0.6); }
+.chk-piece.pb { color: #dfe9f2; text-shadow: 0 0 6px rgba(0,0,0,0.8); }
+.chk-piece.king { font-size: 17px; }
+.chess-piece { font-size: 21px; }
+.chess-piece.pw { color: #f4f8fc; text-shadow: 0 0 3px #000, 0 0 6px rgba(0,0,0,0.9); }
+.chess-piece.pb { color: #14181d; text-shadow: 0 0 3px #cfe6ff, 0 0 6px rgba(207,230,255,0.6); }
+
+.promo-row { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+.promo-btn { font-size: 17px; width: 36px; height: 36px; }
+.game-actions .mini-btn.current { border-color: var(--aqua); color: var(--aqua); }
+
+/* ---------- truck view ---------- */
+.truck-stop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 13px 12px;
+  margin-bottom: 8px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.04);
+  color: var(--ink);
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 15px;
+}
+button.truck-stop:hover { background: var(--aqua-soft); }
+.truck-stop.done { opacity: 0.55; }
+.truck-stop.done .truck-text { text-decoration: line-through; }
+.truck-check { font-size: 18px; color: var(--aqua); flex: 0 0 22px; text-align: center; }
+.truck-num {
+  flex: 0 0 24px; height: 24px;
+  display: grid; place-items: center;
+  border-radius: 7px;
+  background: var(--aqua-soft);
+  color: var(--aqua);
+  font-size: 13px; font-weight: 700;
+}
+.truck-text { flex: 1; }
+.truck-done { width: 36px; height: 36px; font-size: 15px; }
+.truck-done:hover { background: rgba(90, 220, 140, 0.15); color: #5adc8c; }
+
+/* ---------- small screens: wrap the top bar ---------- */
+@media (max-width: 640px) {
+  #topbar { flex-wrap: wrap; }
+  .top-actions { flex-wrap: wrap; }
+}

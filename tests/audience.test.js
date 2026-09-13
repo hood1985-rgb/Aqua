@@ -44,6 +44,9 @@ console.log("[ok] canadianize");
   const rhonda = brain.systemPrompt({ child: false, rhonda: true });
   assert.ok(/Rhonda Hood/.test(rhonda), "Rhonda prompt present for Rhonda");
   assert.ok(!/YOUNG CHILD/.test(rhonda), "no child section for Rhonda");
+  const es = brain.systemPrompt({ child: false, rhonda: false, spanish: true });
+  assert.ok(/ESPA\u00d1OL/.test(es), "spanish prompt present in spanish mode");
+  assert.ok(!/ESPA\u00d1OL/.test(plain), "no spanish section by default");
 }
 console.log("[ok] systemPrompt audience modes");
 

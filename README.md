@@ -38,10 +38,12 @@ own direct calls to OpenAI.
 - 🎤 **Voice in** — she hears you with OpenAI's newer, more accurate
   transcription model (`gpt-4o-mini-transcribe`), tuned to pool-shop lingo,
   with the original Whisper as an automatic fallback.
-- 🎮 **A game side panel** — tic-tac-toe, rock-paper-scissors, guess-the-number,
-  and word guess live in their own panel *beside* the chat, so you can play
-  together while the conversation keeps flowing. Tap the tiles or just say your
-  move ("top left", "rock", "42", "letter E"). Try `/game` (or `/game hard`).
+- 🎮 **A game side panel** — tic-tac-toe, **chess** (full rules: castling, en
+  passant, promotion), **checkers**, **connect four**, rock-paper-scissors,
+  guess-the-number, and word guess live in their own panel *beside* the chat,
+  so you can play together while the conversation keeps flowing. Tap the board
+  or just say your move ("top left", "e2 to e4", "c3 to d4", "column 4"). Try
+  `/game chess` (or `/game hard`).
 - 👥 **She knows who's talking** — enroll up to 4 people in the 👥 People panel
   (a few seconds of each voice) and Aqua matches who's at the mic with OpenAI's
   speaker-diarization model. She greets each person by name and keeps
@@ -53,8 +55,22 @@ own direct calls to OpenAI.
 - 🧒 **Kid-safe talk** — enroll a young child with their age (or tap the 🧒 flag)
   and she keeps it age-appropriate: kind words, simple sentences, no salt.
 - 📚 **Pop quizzes for Angela** — when she's talking with Angela, she'll
-  occasionally slip in a fun school question (math, science, language arts,
-  history, riddles) and cheer her on. Anyone can ask for one with `/quiz`.
+  occasionally slip in a fun school question (math, **spelling**, science,
+  language arts, history, riddles) and cheer her on. Anyone can ask for one
+  with `/quiz`, or drill a subject with `/quiz spelling`.
+- 👋 **Per-person wake-ups** — the first time she hears someone each day, she
+  lights up with a good-morning/afternoon/evening by name, sometimes with a
+  little something she remembers about them.
+- 🇪🇸 **Spanish mode** — `/spanish on` and she answers en español, with a
+  poolside Spanish cheat sheet (`/pool-es`) for the crew: cloro, filtro,
+  bomba, and the phrases that matter at a pool.
+- 🗺️ **Route planner** — line up today's customer stops in order (`/route add`,
+  or pull from customers with `/route addc 2`), reorder them, and check them
+  off through the day.
+- 📝 **Voice notes** — say "Aqua, jot this down: …" anytime (or `/note …`) and
+  it's in today's journal.
+- 🚚 **Truck view** — route and jobs in big touch-friendly rows for checking
+  off between stops, plus the day's sky at a glance.
 - 🇨🇦 **A little something for Rhonda Hood** — and only Rhonda Hood: Aqua lays on
   a friendly Canadian flavour ("favourite colour", the odd "eh?") whenever
   Rhonda's on the mic.
@@ -155,13 +171,18 @@ using her built-in local brain, speaking with Windows' built-in voice.
 | `/people` | Enroll voices so she knows who's talking |
 | `/whoami` | See who she thinks is on the mic |
 | `/strict on` / `/strict off` | Mic obeys ONLY enrolled voices (typing always works) |
-| `/game` | Open the game side panel (tic-tac-toe, RPS, guess, word) |
-| `/game rps` / `/game guess` / `/game word` | Jump straight to a game |
+| `/spanish on` / `/spanish off` | She answers en español |
+| `/pool-es` | Poolside Spanish cheat sheet |
+| `/note …` | Jot a voice-note into today's journal |
+| `/route` / `/route add …` / `/route done 1` | Today's customer stops, in order |
+| `/truck` | Truck view: route + jobs |
+| `/game` | Open the game side panel |
+| `/game chess` / `checkers` / `cf` / `rps` / `guess` / `word` | Jump straight to a game |
 | `/move top left` | Tic-tac-toe move — top left, center, B2, or 1-9 |
 | `/rps rock` | Throw rock, paper, or scissors |
 | `/guess 42` | Guess the number |
 | `/letter e` | Guess a letter in word guess |
-| `/quiz` | Pop quiz! math, science, words, history |
+| `/quiz [subject]` | Pop quiz! math, spelling, science, words, history |
 | `/remind in 20 min …` / `/timer 5` | Reminders & timers |
 | `/brain` | See which brain she's using |
 | `/settings` | Connect her OpenAI brain |
@@ -243,11 +264,12 @@ tests/             self-tests (run: node tests/smoke.js, tests/*.test.js)
 
 ## Roadmap ideas
 
-- Per-person reminders and wake-up greetings ("good morning, Angela!")
-- A Spanish mode for the crew, and a Spanish pool-chemistry cheat sheet
-- Customer route planner: today's stops in the best order, with drive times
-- Voice notes straight into the journal ("Aqua, jot this down…")
-- A phone companion view for checking the job board from the truck
+- Chemical inventory tracker ("we're low on shock — add it to the buy list")
+- Customer text-message drafts ("running 20 minutes late" in one tap)
+- Before/after photo log per customer pool
+- Birthday & anniversary memory for the family and crew
+- Invoice helper: today's stops → a simple amount-due list
+- A cloud-synced phone companion for the truck (true phone sync needs a server)
 - Add a real code-signing certificate so SmartScreen stays fully quiet (the
   build already signs automatically when you add `CSC_LINK` / `CSC_KEY_PASSWORD`
   as GitHub secrets)

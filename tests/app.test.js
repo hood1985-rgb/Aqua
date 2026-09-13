@@ -403,6 +403,110 @@ function memoryJSON() {
     await sleep(90);
     assert(getEl("speaker-chip").textContent === "with Rhonda Hood", "chip should show Rhonda Hood");
     console.log("  Rhonda Hood chip ✓");
+
+    // connect four in the dock + spoken column
+    globalThis.startCfGame();
+    await sleep(30);
+    assert(!getEl("game-dock").classList.contains("hidden"), "dock opens for connect four");
+    await globalThis.handleUserText("column 4");
+    await sleep(30);
+    const cfU = transcript().filter((m) => m.who === "user").slice(-1)[0];
+    assert(/column 4/i.test(cfU.text), "spoken column should show as the user's move");
+    console.log("  connect four spoken drop ✓");
+
+    // checkers via spoken coords
+    globalThis.startCheckersGame();
+    await sleep(20);
+    await globalThis.handleUserText("c3 d4");
+    await sleep(30);
+    const ckU = transcript().filter((m) => m.who === "user").slice(-1)[0];
+    assert(/c3 d4/i.test(ckU.text), "spoken checkers move should show as the user's move");
+    console.log("  checkers spoken move ✓");
+
+    // chess via spoken coords
+    globalThis.startChessGame();
+    await sleep(20);
+    await globalThis.handleUserText("e2 e4");
+    await sleep(30);
+    const chU = transcript().filter((m) => m.who === "user").slice(-1)[0];
+    assert(/e2 e4/i.test(chU.text), "spoken chess move should show as the user's move");
+    console.log("  chess spoken move ✓");
+
+    // voice notes
+    await globalThis.handleUserText("Aqua, jot this down: call the pool store");
+    await sleep(60);
+    const noteReply = transcript().filter((m) => m.who === "aqua").slice(-1)[0];
+    assert(/jotted|written down|noted/i.test(noteReply.text), "note should be confirmed");
+    const memNote = memoryJSON();
+    assert((memNote.daily.lines || []).some((l) => /pool store/.test(l.a || "")), "note lands in today's journal lines");
+    console.log("  voice note ✓");
+
+    // bare "jot this down" asks, next turn is the note
+    await globalThis.handleUserText("jot this down");
+    await sleep(60);
+    const askReply = transcript().filter((m) => m.who === "aqua").slice(-1)[0];
+    assert(/what should i jot down/i.test(askReply.text), "bare note should ask what");
+    await globalThis.handleUserText("buy more chlorine tablets");
+    await sleep(60);
+    await globalThis.handleUserText("/note check the truck tires");
+    await sleep(60);
+    const noteCmd = transcript().filter((m) => m.who === "aqua").slice(-1)[0];
+    assert(/jotted/i.test(noteCmd.text), "/note should confirm");
+    console.log("  bare note + /note command ✓");
+
+    // route planner
+    await globalThis.handleUserText("/route add Smith - filter clean");
+    await sleep(60);
+    await globalThis.handleUserText("/route addc 1");
+    await sleep(60);
+    await globalThis.handleUserText("/route");
+    await sleep(60);
+    const routeReply = transcript().filter((m) => m.who === "aqua").slice(-1)[0];
+    assert(/2 stops/i.test(routeReply.text) && /Smith/i.test(routeReply.text), "route should list both stops");
+    await globalThis.handleUserText("/route done 1");
+    await sleep(60);
+    const memRoute = memoryJSON();
+    assert(memRoute.route.length === 2, "two stops stored");
+    assert(memRoute.routeDone.ids.length === 1, "one stop checked off");
+    console.log("  route planner ✓");
+
+    // spanish mode + cheat sheet
+    await globalThis.handleUserText("/spanish on");
+    await sleep(60);
+    const esReply = transcript().filter((m) => m.who === "aqua").slice(-1)[0];
+    assert(/español/i.test(esReply.text), "spanish mode should confirm");
+    assert(memoryJSON().spanish === true, "spanish flag stored");
+    await globalThis.handleUserText("/pool-es");
+    await sleep(60);
+    const cheat = transcript().filter((m) => m.who === "aqua").slice(-1)[0];
+    assert(/cloro/i.test(cheat.text), "cheat sheet should show");
+    await globalThis.handleUserText("/spanish off");
+    await sleep(60);
+    assert(memoryJSON().spanish !== true, "spanish flag cleared");
+    console.log("  spanish mode ✓");
+
+    // truck view
+    await globalThis.handleUserText("/truck");
+    await sleep(120);
+    assert(getEl("panel-title").textContent === "Truck view", "truck panel title");
+    console.log("  truck view ✓");
+
+    // per-person wake-up greeting fired for Angela
+    const allAqua = transcript().filter((m) => m.who === "aqua").map((m) => m.text).join("\n");
+    assert(/Good (morning|afternoon|evening), Angela!/.test(allAqua), "Angela should get a wake-up greeting");
+    const memP = memoryJSON();
+    const angela = (memP.people || []).find((x) => x.name === "Angela");
+    assert(angela && angela.lastDaily, "Angela's daily greeting stamped");
+    console.log("  wake-up greeting ✓");
+
+    // spelling drill for Angela (+ the skip escape hatch)
+    await globalThis.handleUserText("/quiz spelling", "Angela");
+    await sleep(60);
+    const spellQ = transcript().filter((m) => m.who === "aqua").slice(-1)[0];
+    assert(/\(spelling\)/i.test(spellQ.text), "spelling drill should be spelling, got: " + spellQ.text.slice(0, 60));
+    await globalThis.handleUserText("skip", "Angela");
+    await sleep(90);
+    console.log("  spelling drill ✓");
   }
 
   if (SCENARIO === "openai") {
