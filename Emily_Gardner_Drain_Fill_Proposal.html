@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hood's Pool Service - Drain & Fill Proposal for Emily Gardner & Family</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Inter',system-ui,sans-serif;background:#f4f7fb;color:#1a2e44;line-height:1.6;-webkit-print-color-adjust:exact}
+  .page{max-width:880px;margin:0 auto;background:#fff;box-shadow:0 24px 80px rgba(0,0,0,0.1)}
+  .topbar{background:#0a2540;color:#8bb4d8;padding:10px 44px;font-size:11px;display:flex;justify-content:space-between;letter-spacing:0.02em}
+  .topbar a{color:#7ec8ff;text-decoration:none}
+  .header{background:linear-gradient(135deg,#0a2540 0%,#123a66 55%,#1a4f8a 100%);color:#fff;padding:32px 44px 28px;position:relative;overflow:hidden}
+  .header::before{content:'';position:absolute;top:-60px;right:-30px;width:260px;height:260px;background:radial-gradient(circle,rgba(58,160,255,0.28),transparent 68%);border-radius:50%}
+  .brand{display:flex;align-items:center;gap:16px;margin-bottom:20px;position:relative}
+  .mark{width:52px;height:52px;background:linear-gradient(135deg,#3aa0ff,#00e5ff);border-radius:14px;display:grid;place-items:center;font-weight:900;font-size:24px;color:#fff;box-shadow:0 10px 24px rgba(58,160,255,0.35)}
+  .brand-text{line-height:1.1}
+  .brand-text b{font-size:22px;font-weight:900;letter-spacing:-0.02em;display:block}
+  .brand-text span{font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:#8bb4d8;font-weight:600}
+  .header h1{font-size:30px;font-weight:900;letter-spacing:-0.03em;line-height:1.1;position:relative}
+  .header h1 em{font-style:normal;background:linear-gradient(135deg,#3aa0ff,#00e5ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .header p{font-size:13.5px;color:#a8c5e0;margin-top:10px;max-width:580px;position:relative}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;position:relative}
+  .chip{background:rgba(255,255,255,0.09);border:1px solid rgba(255,255,255,0.14);padding:6px 12px;border-radius:20px;font-size:11px;color:#c2d9ef;font-weight:600}
+  .chip b{color:#fff}
+  .content{padding:32px 44px}
+  .client-box{display:grid;grid-template-columns:1fr 1fr;gap:20px;background:#f8fbff;border:1px solid #d9e6f3;border-radius:16px;padding:20px;margin-bottom:24px}
+  .client-box h4{font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#6a8aad;margin-bottom:8px}
+  .client-box .name{font-size:16px;font-weight:800;color:#0a2540}
+  .client-box .detail{font-size:13px;color:#2a4a5a;margin-top:4px}
+  h2{font-size:16px;font-weight:800;letter-spacing:-0.02em;margin:26px 0 12px;display:flex;align-items:center;gap:10px;color:#0a2540}
+  h2 i{width:30px;height:30px;background:#e8f2ff;border:1px solid #c8daf0;border-radius:9px;display:grid;place-items:center;font-style:normal;font-size:15px}
+  h3{font-size:13.5px;font-weight:700;color:#0a2540;margin:16px 0 8px}
+  .specs{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}
+  .spec{background:#f8fbff;border:1px solid #e1ecf5;border-radius:12px;padding:12px;text-align:center}
+  .spec .k{font-size:9.5px;text-transform:uppercase;letter-spacing:0.08em;color:#6a8aad;font-weight:700}
+  .spec .v{font-size:16px;font-weight:800;color:#0a2540;margin-top:2px}
+  .spec .v small{font-size:11px;font-weight:500;color:#5a7a9a}
+  .photo-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}
+  .photo{background:#eef4fb;border:1px solid #d9e6f3;border-radius:12px;padding:10px;font-size:11px;color:#5a7a9a}
+  .photo b{color:#0a2540;display:block;font-size:12px;margin-bottom:4px}
+  .table{width:100%;border-collapse:collapse;font-size:13px;margin:10px 0}
+  .table th{background:#f1f6fb;text-align:left;padding:10px 12px;font-size:10.5px;text-transform:uppercase;letter-spacing:0.07em;color:#5a7a9a;border-bottom:1px solid #d9e6f3}
+  .table td{padding:10px 12px;border-bottom:1px solid #eef3f8;vertical-align:top}
+  .scope{counter-reset:step}
+  .scope-item{display:flex;gap:14px;padding:12px 0;border-bottom:1px solid #eef3f8}
+  .scope-item:last-child{border-bottom:none}
+  .scope-num{width:28px;height:28px;min-width:28px;background:#0a2540;color:#fff;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800}
+  .scope-item b{display:block;font-size:13px;color:#0a2540}
+  .scope-item span{font-size:12.5px;color:#2f4a5f}
+  .pricing{background:#0a2540;color:#e6f1ff;border-radius:16px;padding:22px;margin:18px 0}
+  .pricing h3{color:#8bb4d8;margin-top:0}
+  .price-row{display:flex;justify-content:space-between;align-items:flex-start;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.08);gap:16px}
+  .price-row:last-child{border-bottom:none}
+  .price-row .l{font-size:12.5px;color:#b8d4ea;flex:1}
+  .price-row .l b{color:#fff;display:block;font-size:13px;margin-bottom:2px}
+  .price-row .r{font-size:14px;font-weight:800;color:#fff;text-align:right;white-space:nowrap}
+  .total-row{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:14px 16px;margin-top:12px;display:flex;justify-content:space-between;align-items:center}
+  .total-row .l{font-size:13px;color:#8bb4d8}
+  .total-row .r{font-size:22px;font-weight:900;background:linear-gradient(135deg,#3aa0ff,#00e5ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .alert{background:#fff8e6;border:1px solid #f0d9a0;border-radius:12px;padding:14px;font-size:12px;color:#6b4d0a;margin:14px 0}
+  .alert b{color:#4a3500}
+  .sig{display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-top:28px;padding-top:20px;border-top:1px solid #e3edf5}
+  .sig-line{border-top:1px solid #0a2540;margin-top:40px;padding-top:8px;font-size:11px;color:#5a7a9a}
+  .footer{background:#f8fbff;border-top:1px solid #e3edf5;padding:18px 44px;font-size:11px;color:#6a8aad;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+  .btns{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+  .btn{padding:11px 18px;border-radius:10px;font-size:12.5px;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:8px;cursor:pointer;border:none}
+  .btn-p{background:#0a2540;color:#fff}
+  .btn-s{background:#e8f2ff;color:#0a2540;border:1px solid #c8daf0}
+  @media(max-width:700px){.header,.content,.footer,.topbar{padding-left:20px;padding-right:20px}.specs{grid-template-columns:1fr 1fr}.client-box{grid-template-columns:1fr}.photo-grid{grid-template-columns:1fr}}
+  @media print{.page{box-shadow:none}.btns{display:none}.topbar{display:none}}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="topbar">
+    <div>Hood's Pool Service • Dallas, TX • Licensed & Insured</div>
+    <div><a href="http://hoodspoolserivce.com">hoodspoolserivce.com</a> • (555) HOOD-POOL</div>
+  </div>
+
+  <div class="header">
+    <div class="brand">
+      <div class="mark">H</div>
+      <div class="brand-text">
+        <b>HOOD'S POOL SERVICE</b>
+        <span>Aqua Division • 3D Certified • Since 2010</span>
+      </div>
+    </div>
+    <h1>Drain & Fill Proposal for <em>Emily Gardner & Family</em></h1>
+    <p>Complete water replacement service for your freeform pool + spa — based on your photos, 3D scan, and precise volume calculation. Includes safe drain, surface inspection, refill, and balanced startup.</p>
+    <div class="chips">
+      <div class="chip"><b>35' × 18'</b> freeform</div>
+      <div class="chip"><b>512 ft²</b> water surface</div>
+      <div class="chip"><b>15,317 gal</b> @ 6' deep</div>
+      <div class="chip">Tanning ledge + 7.5' spa + raised wall</div>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="client-box">
+      <div>
+        <h4>Prepared For</h4>
+        <div class="name">Emily Gardner & Family</div>
+        <div class="detail">Dallas, TX (from photos — brick home, large yard)<br>Pool: Freeform kidney with tanning ledge & attached spa<br>Email: Emily Gardner (on file)</div>
+      </div>
+      <div>
+        <h4>Proposal Details</h4>
+        <div class="detail"><b>Date:</b> September 14, 2026<br><b>Proposal #:</b> HOOD-EG-2026-0914-DF<br><b>Valid Until:</b> October 14, 2026 (30 days)<br><b>Prepared By:</b> Hood's Pool Service<br><b>Site:</b> hoodspoolserivce.com</div>
+      </div>
+    </div>
+
+    <h2><i>📸</i> Your Pool — As Documented From Photos</h2>
+    <p style="font-size:12.5px;color:#2f4a5f">We analyzed 11 photos you provided (Sep 09). The pool is in excellent condition — clear water, intact plaster, functioning cleaner. Drain & fill is recommended for TDS/calcium reset and fresh start.</p>
+
+    <div class="specs">
+      <div class="spec"><div class="k">Length</div><div class="v">35 <small>ft</small></div></div>
+      <div class="spec"><div class="k">Max Width</div><div class="v">18 <small>ft</small></div></div>
+      <div class="spec"><div class="k">Perimeter</div><div class="v">85 <small>ft</small></div></div>
+      <div class="spec"><div class="k">Avg Depth</div><div class="v">4.09 <small>ft</small></div></div>
+      <div class="spec"><div class="k">Main Surface</div><div class="v">468 <small>ft²</small></div></div>
+      <div class="spec"><div class="k">Spa</div><div class="v">44.2 <small>ft² • 7.5' dia</small></div></div>
+      <div class="spec"><div class="k">Total Water Surface</div><div class="v">512 <small>ft²</small></div></div>
+      <div class="spec"><div class="k">Total Interior</div><div class="v">949 <small>ft² @6'</small></div></div>
+    </div>
+
+    <div class="photo-grid">
+      <div class="photo"><b>Photo 1 — Shallow with Spa Steps</b>Foreground: spa spillover + 3 steps with shell mosaics. Tanning ledge on left with turtle markers. Water clear, cleaner visible mid-pool.</div>
+      <div class="photo"><b>Photo 2 — Deep End Raised Wall</b>Shows 18" raised beam wall with dark mosaic tile and 3 scuppers. This wall will be inspected during drain for grout/tile integrity.</div>
+      <div class="photo"><b>Photo 3 — Tanning Ledge Detail</b>Large curved shelf ~6' radius, 0.8-2.2' deep, 3 steps. Anti-slip texture good. Will be pressure-washed during drain.</div>
+      <div class="photo"><b>Photo 4 — Spa Close-up</b>7.5' circular spa, bench seating, dark coping. Water depth ~3'. Jets visible. Will be drained, cleaned, and refilled with main pool.</div>
+      <div class="photo" style="grid-column:span 2"><b>Photo 5 — Full Length View</b>35' length confirmed vs lounge chairs (~6'). House-side curve and fence-side straight edge match our 3D model. Brick coping 0.9' wide, stamped concrete deck.</div>
+    </div>
+
+    <h2><i>💧</i> Volume Calculation — For Accurate Refill & Chemicals</h2>
+    <table class="table">
+      <thead><tr><th>Deep End</th><th>Main Vol</th><th>Spa Vol</th><th>Total Volume</th><th>Chemical Dosing Base</th></tr></thead>
+      <tbody>
+        <tr><td><b>6.0' (assumed, most likely)</b></td><td>14,326 gal</td><td>992 gal</td><td><b>15,317 gal / 2,048 ft³ / 58.0 m³</b></td><td>16,000 gal with safety</td></tr>
+        <tr><td>6.5'</td><td>14,968 gal</td><td>992 gal</td><td>15,959 gal</td><td>16,700 gal</td></tr>
+        <tr><td>7.0'</td><td>15,610 gal</td><td>992 gal</td><td>16,601 gal</td><td>17,400 gal</td></tr>
+        <tr><td>8.0'</td><td>16,894 gal</td><td>992 gal</td><td>17,885 gal</td><td>18,800 gal</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:11.5px;color:#5a7a9a">Method: 0.25' grid numerical integration inside traced polygon (96 points, Catmull-Rom smoothed). Depth includes tanning ledge sphere. Same math runs live in your 3D model: <code>pool_visualizer.html</code></p>
+
+    <h2><i>🛠️</i> Scope of Work — Drain & Fill Service</h2>
+    <div class="scope">
+      <div class="scope-item"><div class="scope-num">1</div><div><b>Pre-Drain Inspection & Water Test</b><span>On-site TDS, calcium hardness, CYA, pH test. Document current plaster condition with photos. Shut off equipment, set multiport to waste. Verify hydrostatic relief valve.</span></div></div>
+      <div class="scope-item"><div class="scope-num">2</div><div><b>Safe Drain — Main Pool + Spa (15,317 gal)</b><span>Submersible pump + waste hose to street cleanout (per city code). Monitor for hydrostatic pressure. Estimated drain time 6-8 hrs for 15k gal @ 35 GPM. Spa drained separately and cleaned. We never drain in heavy rain/water table high.</span></div></div>
+      <div class="scope-item"><div class="scope-num">3</div><div><b>Surface Cleaning & Inspection (while empty)</b><span>Pressure wash floor/walls (949 ft² interior), scrub tanning ledge and 3 steps, clean turtle mosaics, brush spa bench, clear main drain covers, inspect for cracks, hollow spots, tile grout on raised wall (85' perimeter) and spa coping. Minor calcium line removal included.</span></div></div>
+      <div class="scope-item"><div class="scope-num">4</div><div><b>Equipment Check</b><span>Inspect skimmer throats (2), main drains (2), returns, cleaner line, light niches, handrail anchors. Lube O-rings. Check filter pressure, pump basket.</span></div></div>
+      <div class="scope-item"><div class="scope-num">5</div><div><b>Refill — Fresh Water (15,317 gal)</b><span>Refill via 2 hoses with filters to prevent metals, monitor fill to avoid plaster damage (keep plaster wet, fill in one go). Water cost is city water — ~$90-180 for 16k gal in Dallas area (billed by city, we coordinate). Fill time ~18-24 hrs. Spa refilled and balanced to spill over.</span></div></div>
+      <div class="scope-item"><div class="scope-num">6</div><div><b>Startup & Chemical Balancing — 16k Gal Base</b><span>Add sequestrant, initial chlorine, pH adjust, alkalinity, calcium hardness (target 250 ppm), CYA 30-40 ppm. Brush entire pool, run filter 24 hrs continuous. Second visit Day 2 to retest and adjust. Provide written chemical log and dosing chart for your exact volume.</span></div></div>
+      <div class="scope-item"><div class="scope-num">7</div><div><b>Handover — 3D Model + Volume Certificate</b><span>Leave you with printed volume certificate (15,317 gal @ 6' deep), laminated chemical dosing card for 16k gal, and link to your interactive 3D model (pool_visualizer.html) for future service.</span></div></div>
+    </div>
+
+    <div class="alert">
+      <b>⚠️ Important Notes for Emily Gardner & Family:</b><br>
+      • Do NOT drain pool without professional — hydrostatic pressure can pop plaster in this area if water table high. We check relief valve and weather.<br>
+      • Plaster is 5+ years? Photos show good condition — no acid wash needed unless you request. Drain & fill only refreshes water, not surface.<br>
+      • Pets & kids: Keep off deck during drain (exposed deep end 6' drop). Spa will also be empty.<br>
+      • Water truck available if you want faster fill (adds $350) — otherwise hose fill is fine overnight.
+    </div>
+
+    <h2><i>💲</i> Investment — Drain & Fill</h2>
+    <div class="pricing">
+      <h3>Flat-Rate Drain & Fill — Emily Gardner Pool (512 ft², 15,317 gal + spa)</h3>
+      
+      <div class="price-row">
+        <div class="l"><b>Labor — Safe drain, clean, inspect (949 ft² interior)</b>2 techs, 6-8 hrs drain + 3 hrs cleaning/inspection + 2 hrs startup + Day 2 recheck</div>
+        <div class="r">$650</div>
+      </div>
+      <div class="price-row">
+        <div class="l"><b>Equipment — Submersible pump, hoses, pressure washer, filters</b>Includes waste discharge per city code</div>
+        <div class="r">$125</div>
+      </div>
+      <div class="price-row">
+        <div class="l"><b>Startup Chemicals — 16k gal base</b>Sequestrant, chlorine, muriatic acid, alkalinity, calcium, CYA, test kit</div>
+        <div class="r">$185</div>
+      </div>
+      <div class="price-row">
+        <div class="l"><b>Water — 15,317 gal fresh (city billed)</b>City water ~$6-11 per 1k gal in Dallas — we estimate $90-180, you pay city directly. We include hose filters. Truck fill optional +$350.</div>
+        <div class="r">$0 <small style="font-weight:400;color:#8bb4d8">city direct</small></div>
+      </div>
+      <div class="price-row">
+        <div class="l"><b>3D Model + Volume Certificate + Dosing Card</b>Interactive model + printed certificate for future service</div>
+        <div class="r">Included</div>
+      </div>
+
+      <div class="total-row">
+        <div class="l">Total for Labor + Equipment + Chemicals (water separate, city billed)<br><span style="font-size:11px;color:#8bb4d8">If deep end is 7-8', add $75 for extra water handling. Valid 30 days.</span></div>
+        <div class="r">$960</div>
+      </div>
+
+      <div style="margin-top:14px;font-size:11px;color:#8bb4d8;line-height:1.5">
+        <b style="color:#c2d9ef">Optional Add-ons:</b><br>
+        • Acid wash while empty (if calcium scale heavy) — +$450 (949 ft²)<br>
+        • Tile deep clean — raised wall + spa — +$220<br>
+        • Water truck fast fill (16k gal, 4 hrs) — +$350<br>
+        • Full filter clean + new cartridges — +$145<br>
+        Total with all add-ons: $2,025 + city water
+      </div>
+    </div>
+
+    <h2><i>📅</i> Timeline & Terms</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;font-size:12.5px;color:#2f4a5f">
+      <div>
+        <h3>Timeline</h3>
+        <ul style="margin-left:16px">
+          <li><b>Day 1 AM:</b> Test, drain start (6-8 hrs)</li>
+          <li><b>Day 1 PM:</b> Clean, inspect, start refill (evening)</li>
+          <li><b>Day 2 AM:</b> Pool full, startup chemicals, brush, run filter</li>
+          <li><b>Day 3:</b> Recheck water, balance, handover certificate</li>
+          <li>Total downtime: ~36 hrs (no swimming)</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Terms — Hood's Pool Service</h3>
+        <ul style="margin-left:16px">
+          <li>Website: hoodspoolserivce.com (also hoodspoolservice.com)</li>
+          <li>50% deposit to schedule ($480), balance on Day 2</li>
+          <li>Weather hold if rain >0.5" or water table high</li>
+          <li>Warranty: 30-day water balance support</li>
+          <li>Excludes: plaster repairs, major tile/grout, equipment failures found during inspection (quoted separately)</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2><i>📎</i> What You Get</h2>
+    <ul style="font-size:12.5px;color:#2f4a5f;margin-left:18px">
+      <li><b>Emily_Gardner_Drain_Fill_Proposal.html</b> — this proposal (printable)</li>
+      <li><b>pool_visualizer.html</b> — your interactive 3D pool (35'×18', tanning ledge, spa, raised wall) — <a href="https://raw.githack.com/hood1985-rgb/Aqua/arena/01a0a173-aqua/pool_visualizer.html">permanent link</a></li>
+      <li><b>POOL_CALCULATIONS.md</b> — volume math (15,317 gal @ 6' deep)</li>
+      <li>Volume certificate + laminated dosing card for 16k gal</li>
+      <li>Before/after photos of empty pool inspection</li>
+    </ul>
+
+    <div class="btns">
+      <a class="btn btn-p" href="https://raw.githack.com/hood1985-rgb/Aqua/arena/01a0a173-aqua/pool_visualizer.html" target="_blank">🌊 View 3D Model</a>
+      <a class="btn btn-s" href="http://hoodspoolserivce.com" target="_blank">🌐 Hood's Pool Service</a>
+      <button class="btn btn-s" onclick="window.print()">🖨️ Print / Save PDF</button>
+    </div>
+
+    <div style="margin-top:22px;background:#f1f6fb;border-radius:12px;padding:14px;font-size:12px;color:#5a7a9a">
+      <b>Next Step for Emily Gardner & Family:</b> Reply "Approve Drain & Fill" with preferred date. We need 2-day window with no rain. We'll bring pump and filters — you just ensure hose bibs accessible and pets inside. Water will be city-billed separately.
+    </div>
+
+    <div class="sig">
+      <div>
+        <div class="sig-line">Emily Gardner & Family — Acceptance & Date</div>
+      </div>
+      <div>
+        <div class="sig-line">Hood's Pool Service — Authorized Signature</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div>
+      <b>Hood's Pool Service</b> — Aqua Division<br>
+      hoodspoolserivce.com • Dallas, TX<br>
+      Licensed, Insured • 3D Volume Certified
+    </div>
+    <div style="text-align:right">
+      Proposal # HOOD-EG-2026-0914-DF<br>
+      Emily Gardner & Family — Drain & Fill<br>
+      512 ft² • 15,317 gal • 949 ft² interior
+    </div>
+  </div>
+</div>
+</body>
+</html>
