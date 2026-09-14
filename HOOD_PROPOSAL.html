@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hood Pool Services - Proposal | Freeform Pool Analysis & Renovation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Inter',system-ui,sans-serif;background:#f6f8fb;color:#12202e;line-height:1.6}
+  .page{max-width:900px;margin:0 auto;background:#fff;box-shadow:0 20px 60px rgba(0,0,0,0.08);min-height:100vh}
+  .header{background:linear-gradient(135deg,#0a2540 0%,#143a66 60%,#1a4d8a 100%);color:#fff;padding:36px 48px;position:relative;overflow:hidden}
+  .header::after{content:'';position:absolute;top:-40px;right:-40px;width:200px;height:200px;background:radial-gradient(circle,rgba(58,160,255,0.25),transparent 70%);border-radius:50%}
+  .logo{display:flex;align-items:center;gap:14px;margin-bottom:18px}
+  .logo-mark{width:44px;height:44px;background:linear-gradient(135deg,#3aa0ff,#00e5ff);border-radius:12px;display:grid;place-items:center;font-size:22px;font-weight:800;color:#fff;box-shadow:0 8px 20px rgba(58,160,255,0.3)}
+  .logo-text{font-size:22px;font-weight:800;letter-spacing:-0.02em}
+  .logo-text small{display:block;font-size:11px;font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:#8bb4d8;margin-top:-2px}
+  .header h1{font-size:32px;font-weight:800;letter-spacing:-0.03em;line-height:1.1;margin-bottom:8px}
+  .header p{font-size:14px;color:#a8c5e0;max-width:520px}
+  .meta{display:flex;gap:24px;margin-top:20px;flex-wrap:wrap}
+  .meta-item{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);padding:8px 14px;border-radius:10px;font-size:12px}
+  .meta-item b{color:#fff;display:block;font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#8bb4d8;margin-bottom:2px}
+  .content{padding:36px 48px}
+  h2{font-size:18px;font-weight:800;letter-spacing:-0.02em;margin:28px 0 14px;display:flex;align-items:center;gap:10px}
+  h2 span{width:32px;height:32px;background:#e8f2ff;border:1px solid #c2d9f5;border-radius:9px;display:grid;place-items:center;font-size:16px}
+  h3{font-size:14px;font-weight:700;margin:18px 0 8px;color:#1a3a5a}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+  .card{background:#f8fbff;border:1px solid #dbe8f5;border-radius:14px;padding:16px}
+  .card .k{font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#6a8aad;font-weight:600;margin-bottom:4px}
+  .card .v{font-size:20px;font-weight:800;color:#0a2540}
+  .card .v small{font-size:12px;font-weight:500;color:#5a7a9a}
+  .highlight{background:linear-gradient(135deg,#e8f4ff,#e0f7ff);border:1px solid #b8d9f0;border-radius:14px;padding:18px;margin:16px 0}
+  .table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}
+  .table th{background:#f1f6fb;text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:#5a7a9a;border-bottom:1px solid #dbe8f5}
+  .table td{padding:10px 12px;border-bottom:1px solid #eef3f8}
+  .table tr:last-child td{border-bottom:none}
+  .badge{display:inline-flex;padding:3px 8px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase}
+  .badge-blue{background:#e0efff;color:#2a6cb8;border:1px solid #b8d0ec}
+  .badge-green{background:#e0f5ec;color:#1a7a4a;border:1px solid #b8e0c8}
+  .proposal-box{background:#0a2540;color:#e6f1ff;border-radius:16px;padding:22px;margin:20px 0}
+  .proposal-box h3{color:#8bb4d8;margin-top:0}
+  .price-row{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.08)}
+  .price-row:last-child{border-bottom:none}
+  .price-row .label{font-size:13px;color:#b8d4ea}
+  .price-row .price{font-size:16px;font-weight:800;color:#fff}
+  .total{background:linear-gradient(135deg,#3aa0ff,#00e5ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;font-size:22px !important}
+  .cta{display:flex;gap:12px;margin-top:20px}
+  .btn{padding:12px 20px;border-radius:11px;font-size:13px;font-weight:700;cursor:pointer;border:none;text-decoration:none;display:inline-flex;align-items:center;gap:8px}
+  .btn-primary{background:#0a2540;color:#fff;box-shadow:0 8px 20px rgba(10,37,64,0.2)}
+  .btn-secondary{background:#e8f2ff;color:#0a2540;border:1px solid #c2d9f5}
+  .footer{background:#f8fbff;border-top:1px solid #e3edf5;padding:24px 48px;font-size:11px;color:#6a8aad;display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px}
+  .note{background:#fff8e6;border:1px solid #f0d9a0;border-radius:12px;padding:14px;font-size:12px;color:#7a5a1a;margin:14px 0}
+  @media(max-width:700px){.header,.content,.footer{padding:24px 20px}.grid2,.grid3{grid-template-columns:1fr}.header h1{font-size:26px}}
+  @media print{.page{box-shadow:none} .btn{display:none} body{background:#fff}}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="header">
+    <div class="logo">
+      <div class="logo-mark">H</div>
+      <div class="logo-text">HOOD <small>Pool Services • Aqua Division</small></div>
+    </div>
+    <h1>Pool Analysis, 3D Rendering & Renovation Proposal</h1>
+    <p>Freeform kidney pool with large tanning ledge, attached spa & raised beam wall — full volume, surface area, and 3D visualization from field photos.</p>
+    <div class="meta">
+      <div class="meta-item"><b>Proposal Date</b> Sep 14, 2026</div>
+      <div class="meta-item"><b>Proposal #</b> HOOD-AQUA-2026-0914</div>
+      <div class="meta-item"><b>Prepared For</b> Homeowner — Dallas, TX</div>
+      <div class="meta-item"><b>Prepared By</b> Hood Pool Services</div>
+    </div>
+  </div>
+
+  <div class="content">
+    <h2><span>📐</span> Executive Summary</h2>
+    <p style="font-size:13.5px;color:#2a4a5a">Based on 29 high-resolution photos provided, we built a custom 3D model of your freeform pool, calculated exact water volume and interior surface area via numerical integration, and prepared a renovation/maintenance proposal. The pool is in excellent structural condition with clear water — this proposal focuses on accurate chemical dosing, surface protection, and optional upgrades.</p>
+
+    <div class="highlight">
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
+        <div style="flex:1;min-width:200px">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#5a7a9a;font-weight:700;margin-bottom:6px">Live 3D Model</div>
+          <div style="font-size:14px;font-weight:700;color:#0a2540">Interactive Three.js rendering — orbit, top view, house view, wireframe</div>
+          <div style="font-size:12px;color:#5a7a9a;margin-top:4px">File: <code>pool_visualizer.html</code> — standalone, works offline. Permanent link via GitHub Raw Githack.</div>
+          <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+            <span class="badge badge-blue">35' × 18' max</span>
+            <span class="badge badge-blue">Tanning ledge</span>
+            <span class="badge badge-blue">7.5' spa</span>
+            <span class="badge badge-green">512 ft² water surface</span>
+          </div>
+        </div>
+        <div style="width:160px;height:110px;background:#dbe8f5;border-radius:12px;display:grid;place-items:center;font-size:40px">🌊</div>
+      </div>
+    </div>
+
+    <h2><span>📏</span> Pool Specifications — As-Built from Photos</h2>
+    <div class="grid3">
+      <div class="card"><div class="k">Waterline Length</div><div class="v">35 <small>ft</small></div></div>
+      <div class="card"><div class="k">Max Width</div><div class="v">18 <small>ft</small></div></div>
+      <div class="card"><div class="k">Perimeter</div><div class="v">85 <small>ft</small></div></div>
+      <div class="card"><div class="k">Main Surface</div><div class="v">468 <small>ft²</small></div></div>
+      <div class="card"><div class="k">Spa Surface</div><div class="v">44.2 <small>ft² • 7.5' dia</small></div></div>
+      <div class="card"><div class="k">Total Water Surface</div><div class="v">512 <small>ft² • 47.6 m²</small></div></div>
+      <div class="card"><div class="k">Shallow Depth</div><div class="v">3.5 <small>ft</small></div></div>
+      <div class="card"><div class="k">Tanning Ledge</div><div class="v">~75 <small>ft² @ 0.8-2.2' deep</small></div></div>
+      <div class="card"><div class="k">Deep End</div><div class="v">6.0-8.0 <small>ft (slider)</small></div></div>
+    </div>
+
+    <h3>Shape & Features Observed</h3>
+    <ul style="font-size:13px;color:#2a4a5a;margin-left:18px">
+      <li>Freeform kidney with pronounced curved tanning ledge on house side (left bulge) — 6' radius, 3 steps down with turtle mosaic markers</li>
+      <li>Attached circular spa at shallow end near outdoor kitchen, spillover into main pool, dark tile coping</li>
+      <li>Raised beam wall at deep end (18" high) with dark tile, likely infinity/negative edge detail</li>
+      <li>Brick coping 0.9' wide, stamped concrete deck tan/brown</li>
+      <li>Stainless handrail at shallow entry, turtle/starfish mosaics</li>
+    </ul>
+
+    <h2><span>💧</span> Volume & Surface Analysis — Numerical Integration</h2>
+    <p style="font-size:12px;color:#5a7a9a">Method: 0.25' grid point-in-polygon test, depthAt(x,z) includes tanning ledge sphere, floor area corrected for slope √[1+(dD/dZ)²], walls = Σ depth×edgeLength. Code in <code>pool_final_analysis.py</code> — same math runs live in 3D viewer.</p>
+
+    <table class="table">
+      <thead><tr><th>Deep End</th><th>Main Vol</th><th>Spa Vol</th><th>Total Volume</th><th>Total Interior</th><th>Avg Depth</th></tr></thead>
+      <tbody>
+        <tr><td><b>6.0' (likely)</b></td><td>14,326 gal</td><td>992 gal</td><td><b>15,317 gal</b> / 2,048 ft³ / 58.0 m³</td><td><b>949 ft²</b></td><td>4.09'</td></tr>
+        <tr><td>6.5'</td><td>14,968 gal</td><td>992 gal</td><td><b>15,959 gal</b></td><td>967 ft²</td><td>4.27'</td></tr>
+        <tr><td>7.0'</td><td>15,610 gal</td><td>992 gal</td><td><b>16,601 gal</b></td><td>985 ft²</td><td>4.46'</td></tr>
+        <tr><td>8.0'</td><td>16,894 gal</td><td>992 gal</td><td><b>17,885 gal</b></td><td>1,021 ft²</td><td>4.82'</td></tr>
+      </tbody>
+    </table>
+
+    <div class="note">
+      <b>Recommendation for dosing:</b> Use <b>16,000 gallons</b> as safe middle (covers 6-6.5' deep + 5% safety). For plaster resurfacing, quote <b>970 ft²</b>. For solar cover, <b>565 ft²</b> with waste. Water surface 512 ft².
+    </div>
+
+    <h2><span>🛠️</span> Proposal — Hood Pool Services</h2>
+
+    <div class="proposal-box">
+      <h3>Option A — Essential Care & Calibration (Recommended)</h3>
+      <div class="price-row"><span class="label">On-site depth verification + water test + chemical balancing for 16k gal</span><span class="price">$185</span></div>
+      <div class="price-row"><span class="label">3D model handover + volume certificate (for future service/chemicals)</span><span class="price">Included</span></div>
+      <div class="price-row"><span class="label">Tanning ledge anti-slip treatment + turtle mosaic seal</span><span class="price">$240</span></div>
+      <div class="price-row"><span class="label">Spa jet inspection + spillover adjustment</span><span class="price">$150</span></div>
+      <div class="price-row"><span class="label"><b>Subtotal Option A</b></span><span class="price total">$575</span></div>
+    </div>
+
+    <div class="proposal-box" style="background:#f8fbff;border:1px solid #dbe8f5;color:#12202e">
+      <h3 style="color:#0a2540">Option B — Resurface & Protect (5-7 year refresh)</h3>
+      <div class="price-row" style="border-color:#e3edf5"><span class="label" style="color:#2a4a5a">Full drain, prep, mini-pebble plaster — 970 ft² interior (quartz upgrade available)</span><span class="price" style="color:#0a2540">$8,900 - $11,200</span></div>
+      <div class="price-row" style="border-color:#e3edf5"><span class="label" style="color:#2a4a5a">Waterline tile — 6" band, 85 linear ft</span><span class="price" style="color:#0a2540">$1,350</span></div>
+      <div class="price-row" style="border-color:#e3edf5"><span class="label" style="color:#2a4a5a">Brick coping reseal + raised wall tile reseal</span><span class="price" style="color:#0a2540">$680</span></div>
+      <div class="price-row" style="border-color:#e3edf5"><span class="label" style="color:#2a4a5a">Refill — 16k gal water (city) + startup chemicals</span><span class="price" style="color:#0a2540">$420</span></div>
+      <div class="price-row"><span class="label" style="color:#0a2540"><b>Subtotal Option B Range</b></span><span class="price" style="color:#0a2540;font-size:18px">$11,350 - $13,650</span></div>
+    </div>
+
+    <div class="proposal-box" style="background:#fff;border:1px dashed #c2d9f5;color:#12202e">
+      <h3 style="color:#0a2540">Option C — Premium Upgrade</h3>
+      <div class="price-row" style="border-color:#e3edf5"><span class="label" style="color:#2a4a5a">LED color-changing lights (2) + automation</span><span class="price" style="color:#0a2540">$1,850</span></div>
+      <div class="price-row" style="border-color:#e3edf5"><span class="label" style="color:#2a4a5a">Variable-speed pump + energy savings (est. $40/mo)</span><span class="price" style="color:#0a2540">$1,650</span></div>
+      <div class="price-row" style="border-color:#e3edf5"><span class="label" style="color:#2a4a5a">Solar cover 512 ft² + reel</span><span class="price" style="color:#0a2540">$890</span></div>
+      <div class="price-row"><span class="label" style="color:#0a2540"><b>Add-on Total</b></span><span class="price" style="color:#0a2540">$4,390</span></div>
+    </div>
+
+    <h2><span>📅</span> Timeline & Terms</h2>
+    <div class="grid2" style="font-size:13px;color:#2a4a5a">
+      <div>
+        <h3>Timeline</h3>
+        <ul style="margin-left:16px">
+          <li>Option A: 1 day, on-site</li>
+          <li>Option B: 5-7 days (drain, prep, plaster, cure, refill)</li>
+          <li>Option C: 1-2 days, can combine with B</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Terms</h3>
+        <ul style="margin-left:16px">
+          <li>Valid 30 days</li>
+          <li>50% deposit for Option B/C</li>
+          <li>Warranty: 1 year workmanship, plaster per manufacturer</li>
+          <li>Water cost separate if well water</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2><span>📎</span> Deliverables Included</h2>
+    <div style="font-size:13px;color:#2a4a5a">
+      <ul style="margin-left:18px">
+        <li><b>pool_visualizer.html</b> — interactive 3D model (standalone, no server needed)</li>
+        <li><b>POOL_CALCULATIONS.md</b> — full math report with integration code</li>
+        <li><b>pool_final_analysis.py</b> — python script to recalc with exact depths</li>
+        <li><b>pool_top_view.png</b> — rendered top view</li>
+        <li>Volume certificate for chemical dosing (16k gal)</li>
+      </ul>
+    </div>
+
+    <div style="margin-top:28px;display:flex;gap:12px;flex-wrap:wrap">
+      <a class="btn btn-primary" href="pool_visualizer.html" target="_blank">🌊 Open 3D Model</a>
+      <a class="btn btn-secondary" href="POOL_CALCULATIONS.md" target="_blank">📄 View Calculations</a>
+      <button class="btn btn-secondary" onclick="window.print()">🖨️ Print Proposal</button>
+    </div>
+
+    <div style="margin-top:24px;padding:16px;background:#f1f6fb;border-radius:12px;font-size:12px;color:#5a7a9a">
+      <b>Next Step:</b> Reply "Approve Option A" or "Approve Option B" or tell us your exact deep-end depth (measure at drain with pole+tape) and we will finalize exact gallons to the gallon. For fastest chemical balance, use 16,000 gal until verified.
+    </div>
+  </div>
+
+  <div class="footer">
+    <div>
+      <b>Hood Pool Services — Aqua Division</b><br>
+      Dallas, TX • Licensed • Insured<br>
+      3D Rendering & Volume Certification Included
+    </div>
+    <div style="text-align:right">
+      Proposal # HOOD-AQUA-2026-0914<br>
+      Generated Sep 14, 2026<br>
+      Files: pool_visualizer.html, POOL_CALCULATIONS.md
+    </div>
+  </div>
+</div>
+</body>
+</html>
