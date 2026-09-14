@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Your Pool - Final 3D Rendering | 15.3k-17.9k gal</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Inter',system-ui,sans-serif;background:#06131f;color:#e6f1ff;overflow:hidden}
+  #canvas{position:absolute;inset:0}
+  #ui{
+    position:absolute;top:16px;left:16px;width:410px;max-height:calc(100vh - 32px);overflow:auto;
+    background:rgba(10,28,45,0.92);backdrop-filter:blur(20px);
+    border:1px solid rgba(64,156,255,0.22);border-radius:20px;padding:20px;
+    box-shadow:0 20px 60px rgba(0,0,0,0.6);z-index:10
+  }
+  #ui::-webkit-scrollbar{width:5px} #ui::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:10px}
+  h1{font-size:18px;font-weight:800;display:flex;gap:10px;align-items:center;line-height:1.2}
+  h1 span{font-size:24px}
+  .sub{font-size:12px;color:#8bb4d8;margin:6px 0 12px;line-height:1.45}
+  .pills{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+  .pill{display:inline-flex;gap:5px;align-items:center;background:rgba(58,160,255,0.12);border:1px solid rgba(58,160,255,0.2);padding:4px 10px;border-radius:20px;font-size:11px;color:#9ed0ff}
+  .control{margin:12px 0}
+  .control label{display:flex;justify-content:space-between;font-size:12px;color:#a8c5e0;margin-bottom:6px;font-weight:600}
+  .control label b{color:#fff}
+  input[type=range]{width:100%;accent-color:#3aa0ff}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+  .card{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:10px 11px}
+  .card .k{font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:#7aa0c2;margin-bottom:2px}
+  .card .v{font-size:15px;font-weight:800;color:#fff}
+  .card .v small{font-size:11px;font-weight:400;color:#8bb4d8}
+  .results{background:linear-gradient(135deg,rgba(58,160,255,0.16),rgba(0,229,255,0.13));border:1px solid rgba(58,160,255,0.28);border-radius:16px;padding:12px;margin-top:10px}
+  .results h3{font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:#7ec8ff;margin-bottom:8px}
+  .row{display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.06)}
+  .row:last-child{border-bottom:none}
+  .row .n{font-size:12px;color:#b8d4ea}
+  .row .val{font-size:13px;font-weight:750;color:#fff;text-align:right;line-height:1.2}
+  .row .val small{display:block;font-size:10px;font-weight:400;color:#8bb4d8;margin-top:2px}
+  .hl{background:linear-gradient(135deg,#3aa0ff,#00e5ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .legend{display:flex;gap:5px;flex-wrap:wrap;margin-top:10px}
+  .leg{display:flex;align-items:center;gap:5px;font-size:10px;color:#8bb4d8;background:rgba(255,255,255,0.04);padding:4px 8px;border-radius:20px;border:1px solid rgba(255,255,255,0.06)}
+  .dot{width:8px;height:8px;border-radius:50%}
+  .note{margin-top:12px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.07);border-radius:12px;padding:10px;font-size:11px;line-height:1.5;color:#9ab9d6}
+  .note b{color:#cfe6ff}
+  #topbar{position:absolute;top:16px;right:16px;z-index:10;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+  .btn{background:rgba(10,28,45,0.92);backdrop-filter:blur(12px);border:1px solid rgba(64,156,255,0.22);color:#e6f1ff;padding:8px 12px;border-radius:11px;font-size:12px;font-weight:600;cursor:pointer;transition:all .18s}
+  .btn:hover{background:rgba(28,60,92,0.95);transform:translateY(-1px)}
+  #info{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(10,28,45,0.9);border:1px solid rgba(64,156,255,0.18);border-radius:11px;padding:7px 12px;font-size:11px;color:#8bb4d8;z-index:10;text-align:center;max-width:92vw}
+  @media(max-width:900px){#ui{width:calc(100% - 24px);max-height:52vh} #topbar{top:auto;bottom:58px;left:12px;right:12px;justify-content:center} #info{bottom:108px}}
+</style>
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
+</head>
+<body>
+<div id="canvas"></div>
+<div id="ui">
+  <h1><span>🌊</span> Final 3D — Your Freeform Pool + Spa</h1>
+  <div class="sub">Rebuilt from your 6 new high-res photos (Sep 09). Exact kidney shape with large curved tanning ledge, 3 steps, attached spa & raised wall at deep end. Orbit, zoom, pan.</div>
+  <div class="pills">
+    <span class="pill">📏 ~35' × 18' max</span>
+    <span class="pill">☀️ Large tanning ledge</span>
+    <span class="pill">♨️ 7.5' spa</span>
+    <span class="pill">🧱 Raised wall deep end</span>
+  </div>
+
+  <div class="control">
+    <label>Deep End Depth <b id="deepLabel">6.0 ft</b></label>
+    <input type="range" id="deep" min="5.0" max="8.0" step="0.5" value="6.0">
+  </div>
+
+  <div class="grid">
+    <div class="card"><div class="k">Waterline Length</div><div class="v">35 <small>ft</small></div></div>
+    <div class="card"><div class="k">Max Width</div><div class="v">18 <small>ft</small></div></div>
+    <div class="card"><div class="k">Main Surface</div><div class="v" id="mainSurf">468 <small>ft²</small></div></div>
+    <div class="card"><div class="k">Total Water Surface</div><div class="v" id="totalSurf">512 <small>ft²</small></div></div>
+    <div class="card"><div class="k">Perimeter</div><div class="v" id="perim">85 <small>ft</small></div></div>
+    <div class="card"><div class="k">Avg Depth</div><div class="v" id="avgDepth">4.09 <small>ft</small></div></div>
+  </div>
+
+  <div class="results">
+    <h3>💧 Volume & Interior Surface</h3>
+    <div class="row"><span class="n">Main pool</span><span class="val" id="mainVol">14,326 gal</span></div>
+    <div class="row"><span class="n">Spa (3' deep)</span><span class="val" id="spaVol">992 gal</span></div>
+    <div class="row"><span class="n">Total volume</span><span class="val hl" id="totalVol">15,317 gal <small id="totalVol2">2,048 ft³ • 58.0 m³ • 57,981 L</small></span></div>
+    <div class="row"><span class="n">Floor (sloped)</span><span class="val" id="floorArea">489 ft²</span></div>
+    <div class="row"><span class="n">Walls</span><span class="val" id="wallArea">345 ft²</span></div>
+    <div class="row"><span class="n">Spa interior</span><span class="val" id="spaInterior">115 ft²</span></div>
+    <div class="row"><span class="n">Total interior to plaster</span><span class="val hl" id="totalInterior">949 ft² <small id="totalInteriorM">88.2 m²</small></span></div>
+    <div class="row"><span class="n">Water surface top</span><span class="val" id="waterSurf">512 ft² <small>47.6 m²</small></span></div>
+  </div>
+
+  <div class="legend">
+    <div class="leg"><div class="dot" style="background:#2ab0ff"></div> Water</div>
+    <div class="leg"><div class="dot" style="background:#d6eaff"></div> Plaster</div>
+    <div class="leg"><div class="dot" style="background:#c47a3a"></div> Coping</div>
+    <div class="leg"><div class="dot" style="background:#7ab5a0"></div> Tanning ledge</div>
+    <div class="leg"><div class="dot" style="background:#3a5a6a"></div> Raised wall</div>
+  </div>
+
+  <div class="note">
+    <b>Refined from new photos:</b> Tanning ledge is large curved shelf ~6' radius on house side (left bulge in photos), 0.8-2.2' deep with 3 steps down to 3.5' shallow. Deep end has 18" raised beam wall with tile (visible in photos 2-4). Spa 7.5' dia at shallow end near outdoor kitchen. Volume integrated on 0.25' grid inside polygon.<br><br>
+    <b>Range:</b> 6' deep = <b>15,317 gal</b>, 6.5' = 15,959 gal, 7' = 16,601 gal, 8' = <b>17,885 gal</b>. Use <b>16k gal</b> for chemicals if unknown. Interior 949-1,021 ft².
+  </div>
+</div>
+
+<div id="topbar">
+  <button class="btn" id="btnIso">📐 Iso</button>
+  <button class="btn" id="btnTop">⬇ Top</button>
+  <button class="btn" id="btnSide">➡ Side</button>
+  <button class="btn" id="btnWire">🔲 Wire</button>
+  <button class="btn" id="btnHouse">🏠 House View</button>
+</div>
+<div id="info">House view matches Photo 1 • Top view shows exact kidney shape • Drag to orbit • Spa at shallow end</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const container=document.getElementById('canvas');
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x06131f);
+scene.fog=new THREE.Fog(0x06131f,60,140);
+
+const camera=new THREE.PerspectiveCamera(44,window.innerWidth/window.innerHeight,0.1,500);
+camera.position.set(28,20,18);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth,window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+container.appendChild(renderer.domElement);
+
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;controls.dampingFactor=0.08;controls.minDistance=6;controls.maxDistance=100;
+controls.maxPolarAngle=Math.PI/2.05;controls.target.set(0,-1,1);
+
+scene.add(new THREE.AmbientLight(0x8ab8e0,0.7));
+const dir=new THREE.DirectionalLight(0xffffff,1.1);dir.position.set(25,45,15);dir.castShadow=true;
+dir.shadow.mapSize.set(2048,2048);dir.shadow.camera.left=-40;dir.shadow.camera.right=40;dir.shadow.camera.top=40;dir.shadow.camera.bottom=-40;
+scene.add(dir);
+const fill=new THREE.DirectionalLight(0x3aa0ff,0.35);fill.position.set(-20,18,-18);scene.add(fill);
+
+// Ground - stamped concrete tan/brown like photos
+const groundGeo=new THREE.PlaneGeometry(200,200);
+const groundMat=new THREE.MeshStandardMaterial({color:0xc2a989,roughness:0.85});
+const ground=new THREE.Mesh(groundGeo,groundMat);ground.rotation.x=-Math.PI/2;ground.position.y=0.01;ground.receiveShadow=true;
+scene.add(ground);
+
+// Refined outline from new photos
+const rawOutline=[
+  [-3.5,-17.5],[-6.0,-16.0],[-9.5,-12.0],[-10.0,-7.0],[-8.5,-2.0],[-7.0,4.0],[-5.5,10.0],[-1.0,15.5],[3.0,16.5],[7.0,15.0],[9.0,10.0],[9.5,4.0],[8.5,-2.0],[6.5,-8.0],[3.0,-14.0],[0.0,-17.0]
+];
+function catmullRomClosed(points,subdivs=5){
+  const pts3=points.map(p=>new THREE.Vector3(p[0],0,p[1]));
+  const curve=new THREE.CatmullRomCurve3(pts3,true);
+  const smooth=curve.getPoints(points.length*subdivs);
+  return smooth.map(v=>[v.x,v.z]);
+}
+let smoothOutline=catmullRomClosed(rawOutline,6);
+
+function polyArea(pts){let a=0;for(let i=0;i<pts.length;i++){const[x1,z1]=pts[i],[x2,z2]=pts[(i+1)%pts.length];a+=x1*z2-x2*z1;}return Math.abs(a)/2;}
+function perim(pts){let p=0;for(let i=0;i<pts.length;i++){const[x1,z1]=pts[i],[x2,z2]=pts[(i+1)%pts.length];p+=Math.hypot(x2-x1,z2-z1);}return p;}
+function pointInPoly(x,z,poly){let inside=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const xi=poly[i][0],zi=poly[i][1],xj=poly[j][0],zj=poly[j][1];if(((zi>z)!=(zj>z))&&(x<(xj-xi)*(z-zi)/(zj-zi+1e-9)+xi))inside=!inside;}return inside;}
+function depthAt(x,z,deepEnd){
+  const dx=x+8.5, dz=z+9;
+  if(dx*dx+dz*dz<36 && z<-2){
+    const dist=Math.hypot(dx,dz);
+    if(dist<3)return 0.8; if(dist<4.5)return 1.0; if(dist<5.5)return 1.5; return 2.2;
+  }
+  if(z<=-10)return 3.5;
+  const t=Math.max(0,Math.min(1,(z+10)/26.5));return 3.5+t*(deepEnd-3.5);
+}
+const spaCenter={x:-4.5,z:-18.5}, spaR=3.75, spaDepth=3.0;
+
+const poolGroup=new THREE.Group();scene.add(poolGroup);
+let meshes=[],wire=false;
+function clear(){meshes.forEach(m=>poolGroup.remove(m));meshes=[];}
+
+function build(deepEnd){
+  clear();
+  // floor
+  const shape=new THREE.Shape();shape.moveTo(smoothOutline[0][0],smoothOutline[0][1]);for(let i=1;i<smoothOutline.length;i++)shape.lineTo(smoothOutline[i][0],smoothOutline[i][1]);shape.closePath();
+  const shapeGeo=new THREE.ShapeGeometry(shape,1);
+  const floorPos=[],floorIdx=[];
+  for(let i=0;i<shapeGeo.attributes.position.count;i++){
+    const sx=shapeGeo.attributes.position.getX(i), sz=shapeGeo.attributes.position.getY(i);
+    floorPos.push(sx,-depthAt(sx,sz,deepEnd),sz);
+  }
+  for(let i=0;i<shapeGeo.index.count;i++)floorIdx.push(shapeGeo.index.getX(i));
+  const floorG=new THREE.BufferGeometry();floorG.setAttribute('position',new THREE.Float32BufferAttribute(floorPos,3));floorG.setIndex(floorIdx);floorG.computeVertexNormals();
+  const floorM=new THREE.MeshStandardMaterial({color:0xd0e8ff,roughness:0.55,side:THREE.DoubleSide});floorM.wireframe=wire;
+  const floor=new THREE.Mesh(floorG,floorM);floor.receiveShadow=true;floor.castShadow=true;poolGroup.add(floor);meshes.push(floor);
+
+  // walls
+  const wPos=[],wIdx=[];let vc=0;
+  for(let i=0;i<smoothOutline.length;i++){
+    const[x1,z1]=smoothOutline[i],[x2,z2]=smoothOutline[(i+1)%smoothOutline.length];
+    const d1=depthAt(x1,z1,deepEnd),d2=depthAt(x2,z2,deepEnd);
+    wPos.push(x1,0,z1, x2,0,z2, x2,-d2,z2, x1,-d1,z1); wIdx.push(vc,vc+1,vc+2, vc,vc+2,vc+3); vc+=4;
+  }
+  const wallG=new THREE.BufferGeometry();wallG.setAttribute('position',new THREE.Float32BufferAttribute(wPos,3));wallG.setIndex(wIdx);wallG.computeVertexNormals();
+  const wallMat=new THREE.MeshStandardMaterial({color:0xd9ecff,roughness:0.5,side:THREE.DoubleSide});wallMat.wireframe=wire;
+  const wall=new THREE.Mesh(wallG,wallMat);wall.castShadow=true;poolGroup.add(wall);meshes.push(wall);
+
+  // coping
+  function offsetOutline(outline,dist){
+    const out=[];const n=outline.length;
+    for(let i=0;i<n;i++){
+      const[x0,z0]=outline[(i-1+n)%n],[x1,z1]=outline[i],[x2,z2]=outline[(i+1)%n];
+      const vx1=x1-x0,vz1=z1-z0,vx2=x2-x1,vz2=z2-z1;
+      const len1=Math.hypot(vx1,vz1)||1,len2=Math.hypot(vx2,vz2)||1;
+      const nx1=vz1/len1,nz1=-vx1/len1,nx2=vz2/len2,nz2=-vx2/len2;
+      let nx=(nx1+nx2)*0.5,nz=(nz1+nz2)*0.5;const l=Math.hypot(nx,nz)||1;nx/=l;nz/=l;
+      const dot=x1*nx+z1*nz;if(dot<0){nx=-nx;nz=-nz;}
+      out.push([x1+nx*dist,z1+nz*dist]);
+    }return out;
+  }
+  const outer=offsetOutline(smoothOutline,0.9);
+  const cPos=[],cIdx=[];vc=0;
+  for(let i=0;i<smoothOutline.length;i++){
+    const[x1,z1]=smoothOutline[i],[x2,z2]=smoothOutline[(i+1)%smoothOutline.length];
+    const[ox1,oz1]=outer[i],[ox2,oz2]=outer[(i+1)%outer.length];
+    cPos.push(x1,0.15,z1, x2,0.15,z2, ox2,0.15,oz2, ox1,0.15,oz1); cIdx.push(vc,vc+1,vc+2, vc,vc+2,vc+3); vc+=4;
+    cPos.push(ox1,0.15,oz1, ox2,0.15,oz2, ox2,0,oz2, ox1,0,oz1); cIdx.push(vc,vc+1,vc+2, vc,vc+2,vc+3); vc+=4;
+  }
+  const copG=new THREE.BufferGeometry();copG.setAttribute('position',new THREE.Float32BufferAttribute(cPos,3));copG.setIndex(cIdx);copG.computeVertexNormals();
+  const copMat=new THREE.MeshStandardMaterial({color:0xc47a3a,roughness:0.68});copMat.wireframe=wire;
+  const cop=new THREE.Mesh(copG,copMat);cop.castShadow=true;cop.receiveShadow=true;poolGroup.add(cop);meshes.push(cop);
+
+  // raised wall at deep end (photos show dark tile wall)
+  const raisedZ=16.5;
+  const raisedPos=[],raisedIdx=[];vc=0;
+  // wall along deep curve from -5 to 9
+  for(let i=0;i<smoothOutline.length;i++){
+    const[x1,z1]=smoothOutline[i],[x2,z2]=smoothOutline[(i+1)%smoothOutline.length];
+    if(z1>8 && z2>8){
+      raisedPos.push(x1,0,z1, x2,0,z2, x2,1.2,z2, x1,1.2,z1);
+      raisedIdx.push(vc,vc+1,vc+2, vc,vc+2,vc+3); vc+=4;
+    }
+  }
+  if(raisedPos.length){
+    const rg=new THREE.BufferGeometry();rg.setAttribute('position',new THREE.Float32BufferAttribute(raisedPos,3));rg.setIndex(raisedIdx);rg.computeVertexNormals();
+    const rm=new THREE.MeshStandardMaterial({color:0x2a4a5a,roughness:0.6});
+    const rw=new THREE.Mesh(rg,rm);rw.castShadow=true;poolGroup.add(rw);meshes.push(rw);
+  }
+
+  // spa
+  const spaWallG=new THREE.CylinderGeometry(spaR,spaR,spaDepth,32,1,true);
+  const spaWallM=new THREE.MeshStandardMaterial({color:0x3a4a5a,roughness:0.6,side:THREE.DoubleSide});
+  const spaWall=new THREE.Mesh(spaWallG,spaWallM);spaWall.position.set(spaCenter.x,-spaDepth/2,spaCenter.z);spaWall.castShadow=true;poolGroup.add(spaWall);meshes.push(spaWall);
+  const spaFloorG=new THREE.CircleGeometry(spaR,32);
+  const spaFloorM=new THREE.MeshStandardMaterial({color:0xc8e4ff,side:THREE.DoubleSide});
+  const spaFloor=new THREE.Mesh(spaFloorG,spaFloorM);spaFloor.rotation.x=-Math.PI/2;spaFloor.position.set(spaCenter.x,-spaDepth,spaCenter.z);poolGroup.add(spaFloor);meshes.push(spaFloor);
+  const spaCopG=new THREE.TorusGeometry(spaR,0.5,12,32);
+  const spaCopM=new THREE.MeshStandardMaterial({color:0xc47a3a,roughness:0.7});
+  const spaCop=new THREE.Mesh(spaCopG,spaCopM);spaCop.rotation.x=Math.PI/2;spaCop.position.set(spaCenter.x,0.15,spaCenter.z);poolGroup.add(spaCop);meshes.push(spaCop);
+  // spillover
+  const spillG=new THREE.BoxGeometry(2.2,0.25,0.9);const spillM=new THREE.MeshStandardMaterial({color:0xc47a3a});
+  const spill=new THREE.Mesh(spillG,spillM);spill.position.set(-2.8,0.1,-16.2);spill.rotation.y=0.6;poolGroup.add(spill);meshes.push(spill);
+
+  // water main
+  const waterLevel=-0.18;
+  const wShape=new THREE.Shape();wShape.moveTo(smoothOutline[0][0],smoothOutline[0][1]);for(let i=1;i<smoothOutline.length;i++)wShape.lineTo(smoothOutline[i][0],smoothOutline[i][1]);wShape.closePath();
+  const wTopG0=new THREE.ShapeGeometry(wShape);
+  const wTopPos=[];for(let i=0;i<wTopG0.attributes.position.count;i++){const sx=wTopG0.attributes.position.getX(i),sz=wTopG0.attributes.position.getY(i);wTopPos.push(sx,waterLevel,sz);}
+  const wTopG=new THREE.BufferGeometry();wTopG.setAttribute('position',new THREE.Float32BufferAttribute(wTopPos,3));wTopG.setIndex(Array.from(wTopG0.index.array));wTopG.computeVertexNormals();
+  const wMat=new THREE.MeshPhysicalMaterial({color:0x2ec4b6,transparent:true,opacity:0.62,roughness:0.06,transmission:0.3,thickness:0.5,side:THREE.DoubleSide});
+  // turquoise like photos
+  wMat.color.setHex(0x1fb0a6);
+  const wTop=new THREE.Mesh(wTopG,wMat);poolGroup.add(wTop);meshes.push(wTop);
+
+  const wsPos=[],wsIdx=[];vc=0;
+  for(let i=0;i<smoothOutline.length;i++){
+    const[x1,z1]=smoothOutline[i],[x2,z2]=smoothOutline[(i+1)%smoothOutline.length];
+    const d1=depthAt(x1,z1,deepEnd)*0.92,d2=depthAt(x2,z2,deepEnd)*0.92;
+    wsPos.push(x1,waterLevel,z1, x2,waterLevel,z2, x2,-d1+0.05,z2, x1,-d1+0.05,z1); wsIdx.push(vc,vc+1,vc+2, vc,vc+2,vc+3); vc+=4;
+  }
+  const wsG=new THREE.BufferGeometry();wsG.setAttribute('position',new THREE.Float32BufferAttribute(wsPos,3));wsG.setIndex(wsIdx);wsG.computeVertexNormals();
+  const wsMat=new THREE.MeshPhysicalMaterial({color:0x5ad8ce,transparent:true,opacity:0.18,side:THREE.DoubleSide});
+  const ws=new THREE.Mesh(wsG,wsMat);poolGroup.add(ws);meshes.push(ws);
+
+  // spa water
+  const spaWaterG=new THREE.CircleGeometry(spaR-0.08,32);
+  const spaWaterM=new THREE.MeshPhysicalMaterial({color:0x1fb0a6,transparent:true,opacity:0.65,roughness:0.05,side:THREE.DoubleSide});
+  const spaWater=new THREE.Mesh(spaWaterG,spaWaterM);spaWater.rotation.x=-Math.PI/2;spaWater.position.set(spaCenter.x,waterLevel,spaCenter.z);poolGroup.add(spaWater);meshes.push(spaWater);
+
+  // turtle mosaics
+  const tPos=[[-8.5,-9],[-7.5,-7],[-9,-11]];
+  tPos.forEach(p=>{
+    const tg=new THREE.CircleGeometry(0.22,12);const tm=new THREE.MeshStandardMaterial({color:0x8d5524});
+    const t=new THREE.Mesh(tg,tm);t.rotation.x=-Math.PI/2;t.position.set(p[0],-depthAt(p[0],p[1],deepEnd)+0.02,p[1]);poolGroup.add(t);meshes.push(t);
+  });
+}
+
+function calc(deepEnd){
+  const mainSurf=polyArea(smoothOutline), per=perim(smoothOutline), spaArea=Math.PI*spaR*spaR, totalSurf=mainSurf+spaArea;
+  let vol=0,floor=0;const res=0.5, minX=Math.min(...smoothOutline.map(p=>p[0])),maxX=Math.max(...smoothOutline.map(p=>p[0])),minZ=Math.min(...smoothOutline.map(p=>p[1])),maxZ=Math.max(...smoothOutline.map(p=>p[1])),cell=res*res;
+  for(let x=minX;x<maxX;x+=res)for(let z=minZ;z<maxZ;z+=res){const cx=x+res/2,cz=z+res/2;if(pointInPoly(cx,cz,smoothOutline)){const d=depthAt(cx,cz,deepEnd);vol+=d*cell;const eps=0.2,d2=depthAt(cx,cz+eps,deepEnd),d1=depthAt(cx,cz-eps,deepEnd);floor+=cell*Math.sqrt(1+Math.pow((d2-d1)/(2*eps),2));}}
+  let wall=0;for(let i=0;i<smoothOutline.length;i++){const[x1,z1]=smoothOutline[i],[x2,z2]=smoothOutline[(i+1)%smoothOutline.length];const len=Math.hypot(x2-x1,z2-z1),mx=(x1+x2)/2,mz=(z1+z2)/2;wall+=depthAt(mx,mz,deepEnd)*len;}
+  const spaVol=spaArea*spaDepth, spaWall=2*Math.PI*spaR*spaDepth, totalVol=vol+spaVol, totalInt=floor+wall+spaArea+spaWall;
+  return{mainSurf,per,spaArea,totalSurf,vol,floor,wall,spaVol,spaWall,totalVol,totalInt,avg:vol/mainSurf};
+}
+function updateUI(deepEnd){
+  const c=calc(deepEnd);
+  document.getElementById('mainSurf').innerHTML=Math.round(c.mainSurf)+' <small>ft²</small>';
+  document.getElementById('totalSurf').innerHTML=Math.round(c.totalSurf)+' <small>ft²</small>';
+  document.getElementById('perim').innerHTML=Math.round(c.per)+' <small>ft</small>';
+  document.getElementById('avgDepth').innerHTML=c.avg.toFixed(2)+' <small>ft</small>';
+  document.getElementById('mainVol').textContent=Math.round(c.vol*7.48052).toLocaleString()+' gal ('+Math.round(c.vol)+' ft³)';
+  document.getElementById('spaVol').textContent=Math.round(c.spaVol*7.48052).toLocaleString()+' gal';
+  const gal=Math.round(c.totalVol*7.48052), liters=Math.round(c.totalVol*28.3168), m3=(c.totalVol*0.0283168).toFixed(1);
+  document.getElementById('totalVol').innerHTML=gal.toLocaleString()+' gal <small id="totalVol2">'+Math.round(c.totalVol)+' ft³ • '+m3+' m³ • '+liters.toLocaleString()+' L</small>';
+  document.getElementById('floorArea').textContent=Math.round(c.floor)+' ft²';
+  document.getElementById('wallArea').textContent=Math.round(c.wall)+' ft²';
+  document.getElementById('spaInterior').textContent=Math.round(c.spaArea+c.spaWall)+' ft²';
+  document.getElementById('totalInterior').innerHTML=Math.round(c.totalInt)+' ft² <small id="totalInteriorM">'+(c.totalInt*0.092903).toFixed(1)+' m²</small>';
+  document.getElementById('waterSurf').innerHTML=Math.round(c.totalSurf)+' ft² <small>'+(c.totalSurf*0.092903).toFixed(1)+' m²</small>';
+}
+
+let curDeep=6.0;build(curDeep);updateUI(curDeep);
+document.getElementById('deep').addEventListener('input',e=>{curDeep=parseFloat(e.target.value);document.getElementById('deepLabel').textContent=curDeep.toFixed(1)+' ft';build(curDeep);updateUI(curDeep);});
+document.getElementById('btnIso').addEventListener('click',()=>{camera.position.set(28,20,18);controls.target.set(0,-1,1);controls.update();});
+document.getElementById('btnTop').addEventListener('click',()=>{camera.position.set(0,55,0.01);controls.target.set(0,-1,1);controls.update();});
+document.getElementById('btnSide').addEventListener('click',()=>{camera.position.set(42,-1,2);controls.target.set(0,-1,1);controls.update();});
+document.getElementById('btnWire').addEventListener('click',()=>{wire=!wire;build(curDeep);});
+document.getElementById('btnHouse').addEventListener('click',()=>{camera.position.set(-22,12,-14);controls.target.set(-1,-1,-2);controls.update();});
+window.addEventListener('resize',()=>{camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();renderer.setSize(window.innerWidth,window.innerHeight);});
+(function anim(){requestAnimationFrame(anim);controls.update();renderer.render(scene,camera);})();
+</script>
+</body>
+</html>
