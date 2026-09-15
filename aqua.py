@@ -42,6 +42,7 @@ BANNER = r"""
 HELP_TEXT = """Commands — type these anytime:
   /help            show this list
   /profile         see everything Aqua has learned about you
+  /weather         check the weather in your area
   /voice on|off    turn her voice on or off
   /voices          list the voices she can wear
   /voice <id>      switch voice (e.g.  /voice en-US-JennyNeural )
@@ -248,6 +249,29 @@ To give her a smarter brain (optional):
         {"openai_api_key": "sk-..."}
 """))
                 speaker.say("Right now I'm running on my built-in brain. The screen shows how to upgrade me if you ever want.")
+
+        elif cmd == "/weather":
+            try:
+                from weather import get_weather_report
+                # rest can be a location override, e.g. /weather Dallas
+                if rest:
+                    # create a dummy mem-like object with location? just fetch directly
+                    from weather import _fetch_wttr, _format_weather
+                    data = _fetch_wttr(rest)
+                    if data:
+                        report = _format_weather(data)
+                        show_and_speak(f"For {rest}, {report[0].lower() + report[1:]}" if report else f"Here's the weather for {rest}.", speaker)
+                    else:
+                        # fallback to general report with override text
+                        mem_temp = mem
+                        # temporarily inject a fake fact for location
+                        report = get_weather_report(mem)
+                        show_and_speak(report, speaker)
+                else:
+                    report = get_weather_report(mem)
+                    show_and_speak(report, speaker)
+            except Exception as e:
+                show_and_speak(f"I tried to check the weather but couldn't reach the service: {e}", speaker)
 
         elif cmd == "/reset":
             confirm = input(dim("This wipes EVERYTHING Aqua knows about you. "
