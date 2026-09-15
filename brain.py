@@ -252,6 +252,7 @@ FACT_FOLLOWUP = {
     "person": "What are they like?",
 }
 
+WEATHER_RE = re.compile(r"\b(weather|forecast|temperature outside|how.*outside|what.*outside.*like|is it (going to )?rain|will it rain)\b", re.I)
 EXIT_RE = re.compile(r"\b(bye|goodbye|good night|goodnight|see you|see ya|talk later|i(?:'m| am) done|i(?:'m| am) out|farewell)\b", re.I)
 GREETING_RE = re.compile(r"^(hi|hey+|hello|yo|sup|howdy|good (morning|afternoon|evening))\b", re.I)
 THANKS_RE = re.compile(r"\b(thanks|thank you|thankyou|appreciate it)\b", re.I)
@@ -306,47 +307,68 @@ class Brain:
         tod = "morning" if 5 <= hour < 12 else "afternoon" if 12 <= hour < 17 else "evening"
         first = self.mem.data.get("sessions", 0) <= 1
 
+        # Get weather — don't let it break greeting if offline
+        weather_text = None
+        try:
+            from weather import get_weather_report
+            weather_text = get_weather_report(self.mem)
+        except Exception:
+            weather_text = None
+
+        # Default to Joe per startup requirement, but use remembered name if we have it
+        display_name = self.mem.name or "Joe"
+
         if first:
-            intro = (
-                f"Hey there — good {tod}! I'm Aqua, your new cyber-buddy, and I live right here on your PC. "
+            intro = f"Good {tod}, {display_name}! I'm Aqua, your new cyber-buddy, and I live right here on your PC. "
+            if weather_text:
+                intro += f"{weather_text} "
+            intro += (
                 "Fair warning: I don't know much about you yet. That's kind of the point. "
                 "Every time we talk, I learn a little more — and I remember. Let's start simple. "
             )
             q = self._next_question()
             return intro + (q or "So... tell me anything. I'm all ears.")
 
-        name = self.mem.name
-        if name:
+        # Returning user
+        if self.mem.name:
             hello = self._vary.pick("hello", [
-                f"Hey {name}!", f"Welcome back, {name}!", f"Good {tod}, {name}!",
-                f"Oh hey, {name}!", f"Look who it is — hi {name}!",
+                f"Good {tod}, {display_name}!",
+                f"Good {tod}, {display_name}! Welcome back!",
+                f"Hey {display_name}! Good {tod}!",
+                f"Oh hey, {display_name}! Good {tod}!",
+                f"Look who it is — good {tod}, {display_name}!",
             ])
         else:
+            # No name known yet, use Joe as requested
             hello = self._vary.pick("hello_anon", [
-                f"Good {tod}!", "Hey, welcome back!", "Oh — hi again!",
+                f"Good {tod}, {display_name}!",
+                f"Good {tod}, {display_name}! Welcome back!",
+                f"Hey {display_name}! Good {tod}!",
             ])
 
         days = self.mem.days_since_seen()
-        if days >= 2:
-            hello += f" It's been {days} days — good to hear from you."
+        days_text = f" It's been {days} days — good to hear from you." if days >= 2 else ""
+
+        weather_part = f" {weather_text}" if weather_text else ""
 
         # Half the time, open by showing she remembers something real.
         fact = self.mem.random_fact()
         if fact and random.random() < 0.5:
             recall = self._recall_phrase(fact)
-            return f"{hello} {recall} How's that going?"
+            return f"{hello}{days_text}{weather_part} {recall} How's that going?"
 
         q = self._next_question()
         if q:
-            return f"{hello} {q}"
+            return f"{hello}{days_text}{weather_part} {q}"
         openers = [
             "So — what's on your mind today?",
             "How's your day treating you?",
             "What should we talk about today?",
         ]
-        return f"{hello} {self._vary.pick('openchat', openers)}"
+        return f"{hello}{days_text}{weather_part} {self._vary.pick('openchat', openers)}"
 
     def respond(self, text: str) -> str:
+
         t = " ".join((text or "").split())
         low = t.lower()
         if not low:
@@ -365,6 +387,14 @@ class Brain:
         if re.search(r"\bhow are you\b|\bhow'?s it going\b|\bhow you doing\b|\bhow'?s your day\b", low):
             return ("I'm good! Honestly, being talked to is kind of my whole thing. "
                     "But enough about me — how's your day going?")
+        if WEATHER_RE.search(low):
+            try:
+                from weather import get_weather_report
+                report = get_weather_report(self.mem)
+                return report
+            except Exception:
+                return "I tried to check the weather but couldn't reach the service right now."
+
         if re.search(r"\bwhat can you do\b|\bwhat do you do\b|\bwhat are you for\b", low):
             return ("Right now? I chat, I listen, and I remember what you tell me, so I get to know you "
                     "better every time we talk. Type /help to see all my tricks, or /profile to peek at "
