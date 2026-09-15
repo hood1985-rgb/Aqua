@@ -91,6 +91,26 @@ DEEP_POOL = [
     "What's one thing you'd tell your younger self?",
 ]
 
+# Idle chatter — Navy & pool jokes she drops when you're quiet for a while
+IDLE_JOKES = [
+    "So while we're floating here — why did the Navy bring a ladder to the pool? They heard the deck was above sea level!",
+    "Okay, idle thought: my pool tried to join the Navy. They said it had great depth but needed more discipline.",
+    "Random splash for you — what's a sailor's favorite pool game? Marco Polo, but they always answer 'Aye, Captain!'",
+    "Heads up — why don't submarines make good pool toys? They just dive to the bottom and call it stealth mode.",
+    "Since we're idle — how does the Navy keep the pool so clean? Permanent swab-the-deck duty, even on the pool deck!",
+    "Fun one: why did Aqua want to join the Navy? I heard they have the world's biggest pool. It's called the ocean!",
+    "While you were quiet — what did the pool say to the aircraft carrier? Nice try, but I'm the one people actually want to swim in.",
+    "Quick Navy joke: why did the admiral bring a rubber duck to the pool? For his tactical bath-time briefing!",
+    "Navy wisdom while we drift: never run by the pool, never swim by the runway. Some recruits get confused.",
+    "Here's a splash — what's the difference between a Navy recruit and a pool float? One holds air, the other is full of hot air. I'll let you decide!",
+    "Since we're just bobbing here — why did the sailor stare at the pool all day? He was told to watch the water. Took it literally.",
+    "I asked the Navy if my pool could be a training vessel. They said only if it stops doing cannonballs on command.",
+    "Why do Navy folks love pools? It's the only place where 'all hands on deck' means pool party!",
+    "What do you call a Navy chef at the pool? A sous-mariner who finally gets to work above water!",
+    "Why did the pool enlist? It wanted to go from the shallow end to the deep sea!",
+    "Idle splash — why did the sailor bring soap to the pool? He heard they do deep-clean drills!",
+]
+
 ACKS = {
     "neutral": [
         "Got it.", "Okay — noted.", "Mm, good to know.", "That makes sense.",
@@ -589,13 +609,21 @@ class Brain:
             return self._vary.pick("bye_anon", [
                 "Talk soon. I'll remember this.",
                 "See you around — and I'll remember everything.",
+                "Bye for now! Go make a splash somewhere — I'll be here when you get back.",
+                "Signing off. Thanks for hanging out in my little pool!",
             ])
         return self._vary.pick("bye", [
             f"Talk soon, {name}. I'll remember what you told me.",
             f"See you later, {name}. I'll be right here when you need me.",
             f"Take care, {name}. Everything you shared is safe with me.",
             f"Later, {name}! Come tell me how your day went.",
+            f"Bye, {name}! Don't be a stranger — my pool's always open for you.",
+            f"See ya, {name}! Go show the Navy how it's done. I'll be here, keeping the pool warm.",
         ])
+
+    def idle_joke(self) -> str:
+        """Return a random Navy / pool joke for idle chatter (avoids immediate repeats)."""
+        return self._vary.pick("idle_joke", IDLE_JOKES)
 
     def didnt_catch(self, err: str) -> str:
         return DIDNT_CATCH.get(err, DIDNT_CATCH["quiet"])

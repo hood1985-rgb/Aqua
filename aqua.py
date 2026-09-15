@@ -11,7 +11,11 @@ Run with:  python aqua.py     (or double-click "Run Aqua.bat" on Windows)
 from __future__ import annotations
 
 import argparse
+import random
+import signal
 import sys
+import threading
+import time
 from pathlib import Path
 
 # ---- pretty terminal colors (with a fallback if colorama is missing) -------
@@ -59,6 +63,11 @@ Tips:
   * Just type if you'd rather stay quiet — she's not picky.
   * She remembers between chats: everything lives in data/profile.json.
 """
+
+
+# How long Aqua waits while idle before cracking a Navy/pool joke (seconds)
+IDLE_JOKE_MIN = 45  # shortest wait
+IDLE_JOKE_MAX = 120  # longest wait (randomized so it feels natural)
 
 
 def dim(text: str) -> str:
@@ -128,10 +137,70 @@ def main() -> int:
         print(dim("(can't start hands-free without a microphone)"))
 
     stop = False
+    has_said_goodbye = False
+    last_active = time.time()
+    next_idle_delay = random.uniform(IDLE_JOKE_MIN, IDLE_JOKE_MAX)
+    stop_idle = threading.Event()
+
+    def say_goodbye_once() -> None:
+        nonlocal has_said_goodbye
+        if has_said_goodbye:
+            return
+        has_said_goodbye = True
+        try:
+            show_and_speak(brain.farewell(), speaker)
+        except Exception:
+            pass
+
+    # Make sure ANY termination says goodbye — Ctrl+C, window close, kill, etc.
+    def _signal_handler(signum, frame):  # type: ignore[no-untyped-def]
+        say_goodbye_once()
+        stop_idle.set()
+        try:
+            mem.save()
+        except Exception:
+            pass
+        # give the voice a moment to finish before the OS kills us
+        time.sleep(0.6)
+        sys.exit(0)
+
+    for _sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            signal.signal(_sig, _signal_handler)
+        except Exception:
+            pass  # not all platforms support every signal
+
+    # ---- idle chatter: random Navy / pool jokes when she's just floating ----
+    def _idle_watcher() -> None:
+        nonlocal last_active, next_idle_delay, stop
+        while not stop_idle.is_set() and not stop:
+            time.sleep(2)
+            if stop or stop_idle.is_set():
+                break
+            # don't joke while in hands-free listening burst (avoid talking over user)
+            # but do joke when idle in normal typing mode or quiet hands-free
+            idle_for = time.time() - last_active
+            if idle_for >= next_idle_delay:
+                try:
+                    joke = brain.idle_joke()
+                    # add a little splash so it doesn't feel out of nowhere
+                    show_and_speak(joke, speaker)
+                except Exception:
+                    pass
+                # reset timer with a fresh random delay so jokes feel spontaneous
+                last_active = time.time()
+                next_idle_delay = random.uniform(IDLE_JOKE_MIN, IDLE_JOKE_MAX)
+
+    idle_thread = threading.Thread(target=_idle_watcher, name="aqua-idle-jokes", daemon=True)
+    idle_thread.start()
+    print(dim(f"(psst — if you leave her idle for ~{int(IDLE_JOKE_MIN)}-{int(IDLE_JOKE_MAX)}s she'll crack a Navy/pool joke)"))
 
     # ---------------------------------------------------------------- command handler
     def handle_command(line: str) -> None:
-        nonlocal handsfree, stop, smart, brain, mem, speaker, listener
+        nonlocal handsfree, stop, smart, brain, mem, speaker, listener, last_active, next_idle_delay, has_said_goodbye
+        last_active = time.time()
+        # give the idle watcher a fresh random window after any command
+        next_idle_delay = random.uniform(IDLE_JOKE_MIN, IDLE_JOKE_MAX)
 
         parts = line.split(maxsplit=1)
         cmd = parts[0].lower()
@@ -284,77 +353,106 @@ To give her a smarter brain (optional):
                 show_and_speak("Good — I was a little nervous there.", speaker)
 
         elif cmd in ("/quit", "/exit", "/bye"):
-            show_and_speak(brain.farewell(), speaker)
+            say_goodbye_once()
             stop = True
+            stop_idle.set()
 
         else:
             show_and_speak("Hmm, I don't know that one. /help shows the list.", speaker)
 
     # ---------------------------------------------------------------- main loop
-    while not stop:
-        try:
-            if handsfree and listener is not None:
-                print(dim("(listening…) say 'stop listening' to pause, or 'goodbye' to leave"))
-                text, err = listener.listen_and_transcribe()
-                if text is None:
-                    if err == "network":
-                        print(dim("(speech service unreachable — check internet)"))
-                        handsfree = False
-                        print(dim("(switched back to typing mode)"))
-                    continue
-                print(f"\n{Fore.GREEN}You{Style.RESET_ALL}: {text}")
-                low = text.lower().strip().strip(".,!?")
-                if low in ("stop listening", "stop hands free", "hands free off", "stop listening mode"):
-                    handsfree = False
-                    show_and_speak("Okay — back to keyboard and mouse.", speaker)
-                    continue
-            else:
-                raw = input(f"\n{Fore.GREEN}You{Style.RESET_ALL}: ").strip()
-                if not raw:
-                    if listener is None:
-                        print(dim("(tip: type what you want to say — /help shows commands)"))
-                        continue
-                    print(dim("(listening…)"))
+    try:
+        while not stop:
+            try:
+                if handsfree and listener is not None:
+                    print(dim("(listening…) say 'stop listening' to pause, or 'goodbye' to leave"))
                     text, err = listener.listen_and_transcribe()
                     if text is None:
-                        show_and_speak(brain.didnt_catch(err or "quiet"), speaker)
+                        if err == "network":
+                            print(dim("(speech service unreachable — check internet)"))
+                            handsfree = False
+                            print(dim("(switched back to typing mode)"))
                         continue
-                    print(f"{Fore.GREEN}You{Style.RESET_ALL}: {text}")
+                    print(f"\n{Fore.GREEN}You{Style.RESET_ALL}: {text}")
+                    low = text.lower().strip().strip(".,!?")
+                    if low in ("stop listening", "stop hands free", "hands free off", "stop listening mode"):
+                        handsfree = False
+                        last_active = time.time()
+                        next_idle_delay = random.uniform(IDLE_JOKE_MIN, IDLE_JOKE_MAX)
+                        show_and_speak("Okay — back to keyboard and mouse.", speaker)
+                        continue
                 else:
-                    text = raw
-        except (KeyboardInterrupt, EOFError):
-            print()
-            show_and_speak(brain.farewell(), speaker)
-            break
+                    raw = input(f"\n{Fore.GREEN}You{Style.RESET_ALL}: ").strip()
+                    if not raw:
+                        if listener is None:
+                            print(dim("(tip: type what you want to say — /help shows commands)"))
+                            continue
+                        print(dim("(listening…)"))
+                        text, err = listener.listen_and_transcribe()
+                        if text is None:
+                            show_and_speak(brain.didnt_catch(err or "quiet"), speaker)
+                            continue
+                        print(f"{Fore.GREEN}You{Style.RESET_ALL}: {text}")
+                    else:
+                        text = raw
+                # any successful input resets the idle timer
+                last_active = time.time()
+                next_idle_delay = random.uniform(IDLE_JOKE_MIN, IDLE_JOKE_MAX)
+            except (KeyboardInterrupt, EOFError):
+                print()
+                say_goodbye_once()
+                stop = True
+                stop_idle.set()
+                break
 
-        # commands
-        if text.startswith("/"):
-            handle_command(text)
-            continue
+            # commands
+            if text.startswith("/"):
+                handle_command(text)
+                continue
 
-        # plain conversation
-        if brain.is_exit(text):
-            show_and_speak(brain.farewell(), speaker)
-            break
+            # plain conversation — goodbye always spoken via say_goodbye_once
+            if brain.is_exit(text):
+                say_goodbye_once()
+                stop = True
+                stop_idle.set()
+                break
 
-        reply = None
-        if smart is not None:
-            brain.learn_from(text)  # she still learns, even with a smart brain
+            reply = None
+            if smart is not None:
+                brain.learn_from(text)  # she still learns, even with a smart brain
+                try:
+                    reply = smart.reply(text, brain.system_prompt(), mem.history_for_llm())
+                except Exception:
+                    print(dim("(smart brain hiccupped — using her built-in brain this once)"))
+                    reply = None
+            if not reply:
+                reply = brain.respond(text)
+
+            mem.add_exchange(text, reply)
+            mem.save()
+            show_and_speak(reply, speaker)
+            # Aqua just spoke — reset idle clock so she doesn't joke over herself
+            last_active = time.time()
+            next_idle_delay = random.uniform(IDLE_JOKE_MIN, IDLE_JOKE_MAX)
+    finally:
+        # Ensure we always say goodbye on ANY way out if we haven't already
+        if not has_said_goodbye and not stop:
+            # normal loop fall-through without explicit goodbye — still be polite
+            # (e.g. window closed via OS, exception, etc. — signal handler already covers most)
             try:
-                reply = smart.reply(text, brain.system_prompt(), mem.history_for_llm())
+                say_goodbye_once()
             except Exception:
-                print(dim("(smart brain hiccupped — using her built-in brain this once)"))
-                reply = None
-        if not reply:
-            reply = brain.respond(text)
-
-        mem.add_exchange(text, reply)
+                pass
+        stop_idle.set()
+        # give idle thread a moment to finish if it was about to speak
+        try:
+            if idle_thread.is_alive():
+                idle_thread.join(timeout=0.5)
+        except Exception:
+            pass
         mem.save()
-        show_and_speak(reply, speaker)
-
-    mem.save()
-    print(dim(f"(she saved this conversation to {DATA_DIR / 'profile.json'} — see you next time)"))
-    return 0
+        print(dim(f"(she saved this conversation to {DATA_DIR / 'profile.json'} — see you next time)"))
+        return 0
 
 
 if __name__ == "__main__":
