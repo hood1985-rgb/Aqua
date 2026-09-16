@@ -276,6 +276,10 @@ WEATHER_RE = re.compile(r"\b(weather|forecast|temperature outside|how.*outside|w
 EXIT_RE = re.compile(r"\b(bye|goodbye|good night|goodnight|see you|see ya|talk later|i(?:'m| am) done|i(?:'m| am) out|farewell)\b", re.I)
 GREETING_RE = re.compile(r"^(hi|hey+|hello|yo|sup|howdy|good (morning|afternoon|evening))\b", re.I)
 THANKS_RE = re.compile(r"\b(thanks|thank you|thankyou|appreciate it)\b", re.I)
+# Joke request — covers “tell me a joke”, “navy joke”, “pool joke”, “swimming joke”, “make me laugh”, etc.
+JOKE_RE = re.compile(r"\bjokes?\b", re.I)
+FUNNY_RE = re.compile(r"\b(make me laugh|something funny|be funny|tell me something funny)\b", re.I)
+NAVY_POOL_JOKE_RE = re.compile(r"\b(navy|pool|swim|swimming)\b", re.I)
 SORRY_RE = re.compile(r"\b(sorry|my bad|apologies)\b", re.I)
 COMPLIMENT_RE = re.compile(r"\bi love you\b|\byou'?re (great|awesome|amazing|cool|the best|sweet|funny|sweetheart)\b|\bi (like|love) (you|talking to you|this)\b", re.I)
 INSULT_RE = re.compile(r"\byou'?re (stupid|dumb|useless|annoying|an idiot)\b|\byou suck\b|\bshut up\b|\bstupid (robot|computer|ai)\b", re.I)
@@ -414,6 +418,19 @@ class Brain:
                 return report
             except Exception:
                 return "I tried to check the weather but couldn't reach the service right now."
+
+        # --- Navy / pool joke on demand — whenever someone asks ---
+        if JOKE_RE.search(low) or FUNNY_RE.search(low):
+            joke = self.idle_joke()
+            prefix = self._vary.pick("jokeprefix", [
+                "You got it — here's one: ",
+                "Oh, you want a splash of funny? ",
+                "Anchors aweigh — ",
+                "Coming right up: ",
+                "*splash* Okay: ",
+                "For you — ",
+            ])
+            return prefix + joke
 
         if re.search(r"\bwhat can you do\b|\bwhat do you do\b|\bwhat are you for\b", low):
             return ("Right now? I chat, I listen, and I remember what you tell me, so I get to know you "
@@ -640,7 +657,11 @@ class Brain:
             "Keep replies to 1-3 short sentences because they are often spoken aloud. Your mission right "
             "now is getting to know the user: react to what they share with real interest, and ask at "
             "most one thoughtful follow-up question per reply. Naturally remember and reference things "
-            "they've told you before.\n\n"
+            "they've told you before. "
+            "When you greet, say Good morning / Good afternoon / Good evening for the time of day and "
+            "share today's weather for their location if you know it. If the user asks for a joke, "
+            "always tell a Navy or swimming-pool joke (keep it light, e.g. about the Navy, sailors, pools, swimming). "
+            "When shutting down, always say a warm goodbye by name if you know it.\n\n"
             "What you already know about them:\n"
             + (self.mem.summary() or "- Nothing yet — you're just meeting them.")
         )

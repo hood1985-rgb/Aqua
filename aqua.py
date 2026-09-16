@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import random
+import re
 import signal
 import sys
 import threading
@@ -47,6 +48,7 @@ HELP_TEXT = """Commands — type these anytime:
   /help            show this list
   /profile         see everything Aqua has learned about you
   /weather         check the weather in your area
+  /joke            hear a Navy / pool joke
   /voice on|off    turn her voice on or off
   /voices          list the voices she can wear
   /voice <id>      switch voice (e.g.  /voice en-US-JennyNeural )
@@ -352,6 +354,17 @@ To give her a smarter brain (optional):
             else:
                 show_and_speak("Good — I was a little nervous there.", speaker)
 
+        elif cmd in ("/joke", "/jokes"):
+            prefix = brain._vary.pick("jokeprefix", [
+                "You got it — here's one: ",
+                "Oh, you want a splash of funny? ",
+                "Anchors aweigh — ",
+                "Coming right up: ",
+                "*splash* Okay: ",
+                "For you — ",
+            ])
+            show_and_speak(prefix + brain.idle_joke(), speaker)
+
         elif cmd in ("/quit", "/exit", "/bye"):
             say_goodbye_once()
             stop = True
@@ -416,6 +429,37 @@ To give her a smarter brain (optional):
                 stop = True
                 stop_idle.set()
                 break
+
+            # --- On-demand Navy/pool jokes & weather — handled locally even with smart brain ---
+            _low = text.lower()
+            if re.search(r"\bjokes?\b", _low) or re.search(r"\b(make me laugh|something funny|be funny)\b", _low):
+                prefix = brain._vary.pick("jokeprefix", [
+                    "You got it — here's one: ",
+                    "Oh, you want a splash of funny? ",
+                    "Anchors aweigh — ",
+                    "Coming right up: ",
+                    "*splash* Okay: ",
+                    "For you — ",
+                ])
+                reply = prefix + brain.idle_joke()
+                mem.add_exchange(text, reply)
+                mem.save()
+                show_and_speak(reply, speaker)
+                last_active = time.time()
+                next_idle_delay = random.uniform(IDLE_JOKE_MIN, IDLE_JOKE_MAX)
+                continue
+            if re.search(r"\b(weather|forecast|temperature outside|how.*outside|what.*outside.*like|is it (going to )?rain|will it rain)\b", _low):
+                try:
+                    from weather import get_weather_report
+                    reply = get_weather_report(mem)
+                except Exception:
+                    reply = "I tried to check the weather but couldn't reach the service right now."
+                mem.add_exchange(text, reply)
+                mem.save()
+                show_and_speak(reply, speaker)
+                last_active = time.time()
+                next_idle_delay = random.uniform(IDLE_JOKE_MIN, IDLE_JOKE_MAX)
+                continue
 
             reply = None
             if smart is not None:
